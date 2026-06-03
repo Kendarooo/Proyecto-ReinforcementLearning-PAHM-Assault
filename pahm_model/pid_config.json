@@ -1,0 +1,17 @@
+{
+    "metadata": {
+        "source_model": "pahm_fast_v2_best.pth",
+        "settling_time_target": 2.0,
+        "pole_ratio": 10.0
+    },
+    "gains": {
+        "Kp": 0.899148025226005,
+        "Ki": 1.3993841145368218,
+        "Kd": 0.19689560268742035
+    },
+    "plant_params": {
+        "alpha": 174.2838134765625,
+        "beta": 0.4842835068702698,
+        "gamma": 19.903053283691406
+    }
+}
