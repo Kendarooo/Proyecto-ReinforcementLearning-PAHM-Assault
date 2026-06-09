@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "project": {
+    "name": "pahm-stage0-boxing",
+    "wandb_project": "boxing_dqn",
+    "wandb_entity": null,
+    "seed": 42
+  },
+  "environment": {
+    "env_id": "ALE/Boxing-v5",
+    "n_envs": 4,
+    "frame_stack": 4,
+    "render_mode": null,
+    "debug_render": false
+  },
+  "model": {
+    "policy": "CnnPolicy",
+    "algorithm": "DoubleDQN"
+  },
+  "hyperparameters": {
+    "learning_rate": 1e-4,
+    "buffer_size": 100000,
+    "batch_size": 32,
+    "gamma": 0.99,
+    "exploration_fraction": 0.15,
+    "exploration_initial_eps": 1.0,
+    "exploration_final_eps": 0.01,
+    "learning_starts": 10000,
+    "train_freq": 2,
+    "target_update_interval": 1000,
+    "max_grad_norm": 10,
+    "total_timesteps": 3000000
+  },
+  "checkpoints": {
+    "save_dir": "checkpoints/",
+    "save_freq": 50000,
+    "keep_n_last": 5
+  },
+  "paths": {
+    "log_dir": "logs/",
+    "model_dir": "models/",
+    "demo_model_path": "models/best_model.zip"
+  }
+}
