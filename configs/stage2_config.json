@@ -17,6 +17,12 @@
     "file_format": "npy",
     "manifest_path": "artifacts/stage2/tau_w_manifest.json"
   },
+  "unsupervised": {
+    "n_components_range": [2, 6],
+    "covariance_type": "full",
+    "features": ["mean", "std", "max_abs", "skewness", "smoothness", "energy"],
+    "checkpoint_path": "artifacts/stage2/gmm_wind_model.pkl"
+  },
   "wandb": {
     "project": "pahm-stage2",
     "entity": null
