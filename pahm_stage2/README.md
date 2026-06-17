@@ -36,6 +36,10 @@ Implementa el modelo no supervisado basado en GMM. Entrena varios modelos, selec
 
 Contiene utilidades de validación. Para datos sintéticos con etiquetas conocidas calcula ARI y NMI; para datos reales sin etiquetas resume la distribución de clusters de forma exploratoria.
 
+### `validate_synthetic_real.py`
+
+Ejecuta la validación sintético-real de la representación no supervisada. Genera patrones sintéticos conocidos, entrena el GMM, reporta BIC, ARI y NMI, guarda gráficas para el PDF y omite el análisis real si todavía no existe el manifest de `tau_w(t)` entregado por Etapa 1.
+
 ### `wind_sampler.py`
 
 Carga un checkpoint del modelo no supervisado y expone `sample()` para producir muestras como tensores de PyTorch. Este módulo sirve como consumidor inicial de la representación aprendida.
@@ -53,3 +57,16 @@ trayectorias .npy
   -> validator.py / wind_sampler.py
 ```
 
+## Validación sintético-real
+
+```bash
+python -m pahm_stage2.validate_synthetic_real --config configs/stage2_config.json
+```
+
+El script escribe artefactos en `artifacts/stage2/validation/`:
+
+- `synthetic_metrics.json`
+- `bic_curve.png`
+- `synthetic_clusters.png`
+- `real_cluster_counts.json`, cuando exista el manifest real
+- `real_cluster_distribution.png`, cuando exista el manifest real

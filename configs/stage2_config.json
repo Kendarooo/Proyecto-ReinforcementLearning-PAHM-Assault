@@ -23,8 +23,14 @@
     "features": ["mean", "std", "max_abs", "skewness", "smoothness", "energy"],
     "checkpoint_path": "artifacts/stage2/gmm_wind_model.pkl"
   },
+  "validation": {
+    "output_dir": "artifacts/stage2/validation",
+    "synthetic_samples_per_pattern": 50,
+    "signal_length": 200
+  },
   "wandb": {
     "project": "pahm-stage2",
-    "entity": null
+    "entity": null,
+    "mode": "online"
   }
 }
