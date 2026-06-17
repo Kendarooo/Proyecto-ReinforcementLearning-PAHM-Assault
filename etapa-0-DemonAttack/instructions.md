@@ -1,3 +1,5 @@
+# _Autores_: Alexandra Alfaro Elizondo, Kendall Madrigal Campos /Codex
+
 # Instrucciones — Etapa 0: DQN en Demon Attack
 
 ## ¿Qué hace esta etapa?
@@ -28,8 +30,7 @@ en tiempo real a colores.
 uv venv .venv
 source .venv/bin/activate
 
-uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-uv pip install ale-py "gymnasium[atari]" opencv-python wandb pytest autorom
+uv pip install -r ../requirements.txt
 
 AutoROM --accept-license
 ```

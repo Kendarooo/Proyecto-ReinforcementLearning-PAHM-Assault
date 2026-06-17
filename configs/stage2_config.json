@@ -1,0 +1,24 @@
+{
+  "seed": 42,
+  "data": {
+    "source": "synthetic",
+    "synthetic_input_dir": "data/stage2/synthetic_input",
+    "real_input_dir": "data/stage2/real_input",
+    "file_pattern": "*.npy"
+  },
+  "estimator": {
+    "type": "dummy",
+    "checkpoint_path": "artifacts/stage1/estimador_wind.pth",
+    "device": "cpu"
+  },
+  "outputs": {
+    "tau_w_dir": "artifacts/stage2/tau_w_signals",
+    "file_prefix": "tau_w",
+    "file_format": "npy",
+    "manifest_path": "artifacts/stage2/tau_w_manifest.json"
+  },
+  "wandb": {
+    "project": "pahm-stage2",
+    "entity": null
+  }
+}

@@ -1,0 +1,27 @@
+
+# Core numeric and data stack
+numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+
+# Deep learning and model training
+torch
+torchvision
+torchdiffeq
+
+# Reinforcement learning environments and Atari support
+gymnasium[atari]
+ale-py
+autorom
+stable-baselines3
+
+# Visualization and image preprocessing
+pygame
+opencv-python
+
+# Experiment tracking and quality checks
+wandb
+pytest
+ruff
