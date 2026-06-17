@@ -130,6 +130,7 @@ def test_pipeline_logs_basic_wandb_metrics(tmp_path, monkeypatch):
     run_pipeline(str(config_path))
 
     assert fake_wandb.init_kwargs["project"] == "pahm-stage2-test"
+    assert fake_wandb.init_kwargs["mode"] == "disabled"
     assert fake_wandb.run.logged[-1] == {
         "n_trajectories": 2,
         "estimator_type": "dummy",

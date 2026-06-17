@@ -52,6 +52,7 @@ def run_pipeline(config_path: str) -> dict:
         entity=config["wandb"].get("entity"),
         config=config,
         job_type="generate_tau_w",
+        mode=config["wandb"].get("mode", "online"),
     )
 
     dataset = TauTrajectoryDataset(config)
