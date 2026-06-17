@@ -46,9 +46,21 @@ def _write_config(tmp_path: Path, n_trajectories: int = 3) -> Path:
             "file_format": "npy",
             "manifest_path": str(tmp_path / "tau_w_manifest.json"),
         },
+        "unsupervised": {
+            "n_components_range": [2, 6],
+            "covariance_type": "full",
+            "features": ["mean", "std", "max_abs", "skewness", "smoothness", "energy"],
+            "checkpoint_path": str(tmp_path / "gmm_wind_model.pkl"),
+        },
+        "validation": {
+            "output_dir": str(tmp_path / "validation"),
+            "synthetic_samples_per_pattern": 12,
+            "signal_length": 96,
+        },
         "wandb": {
             "project": "pahm-stage2-test",
             "entity": None,
+            "mode": "disabled",
         },
     }
     config_path = tmp_path / "stage2_config.json"

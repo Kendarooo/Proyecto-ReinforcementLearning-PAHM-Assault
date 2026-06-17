@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 
 
-REQUIRED_SECTIONS = ("data", "estimator", "outputs", "wandb")
+REQUIRED_SECTIONS = ("data", "estimator", "outputs", "wandb", "unsupervised", "validation")
 
 
 def _seed_torch(seed: int) -> None:
