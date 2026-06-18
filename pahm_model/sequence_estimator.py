@@ -1,12 +1,11 @@
 """
 ================================================================================
 MÓDULO: pahm_model/sequence_estimator.py
-FUNCIÓN: Implementación de la arquitectura de red neuronal recurrente (GRU)
-         para la inferencia del torque de perturbación del viento a partir de
-         ventanas de historial cinemático y de control.
-VERSIÓN: 1.0.0
-AUTOR: Gemini (Sénior Software Engineer & ML Expert)
-AUDITORÍA: Alexandra, Bryan, Katherine, Kendall
+FUNCIÓN: Red neuronal recurrente basada en GRU para inferir el torque latente
+         del viento a partir de ventanas de historia cinemática.
+         La salida usa tanh escalado para limitar τ_w a un rango físicamente
+         plausible y evitar torques explosivos durante el entrenamiento.
+VERSIÓN: 3.0.0
 ================================================================================
 """
 
@@ -15,50 +14,59 @@ import torch.nn as nn
 
 
 class WindSequenceEstimator(nn.Module):
-    """Estimador de secuencias basado en GRU para inferencia de viento latente.
+    """Estimador de secuencias recurrente para perturbaciones aditivas (CON-2).
 
-    Esta clase implementa una arquitectura recurrente limpia que respeta de
-    forma estricta la restricción CON-2: solo procesa variables de estado y
-    control directas, impidiendo el acceso al residuo calculado r(t).
+    La salida está acotada por tanh(x) * tau_max para garantizar que el
+    torque estimado sea físicamente plausible y no explote durante el
+    entrenamiento. tau_max se calibra según el rango de los residuos
+    observados en FR-3 (~0.94 en escala normalizada).
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int, num_layers: int) -> None:
-        """Inicializa las capas recurrentes y de proyección lineal.
+    def __init__(
+        self,
+        input_dim: int = 4,
+        hidden_dim: int = 64,
+        num_layers: int = 2,
+        tau_max: float = 2.0
+    ) -> None:
+        """Inicializa la arquitectura GRU con salida acotada.
 
         Args:
-            input_dim: Número de variables físicas de entrada por paso (fijo en 4).
-            hidden_dim: Dimensión del estado oculto de la celda GRU.
-            num_layers: Cantidad de capas GRU acopladas verticalmente.
+            input_dim:  Número de features de entrada (fijo en 4: sin θ, cos θ, dθ/dt, u).
+            hidden_dim: Dimensión del estado oculto de la GRU.
+            num_layers: Número de capas GRU apiladas.
+            tau_max:    Límite absoluto del torque estimado. La salida se acota
+                        en [-tau_max, +tau_max] via tanh escalado.
         """
         super().__init__()
-        
-        # Capa recurrente principal. Procesa lotes con formato (Batch, Seq, Features)
+        self.input_dim = input_dim
+        self.tau_max   = tau_max
+
         self.gru = nn.GRU(
             input_size=input_dim,
             hidden_size=hidden_dim,
             num_layers=num_layers,
             batch_first=True
         )
-        
-        # Capa lineal de salida para estimar el escalar del torque adicional
-        self.regressor = nn.Linear(hidden_dim, 1)
+        self.fc = nn.Linear(hidden_dim, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Realiza la propagación hacia adelante del estimador.
+        """Infiere el torque escalar del viento acotado en [-tau_max, tau_max].
 
         Args:
-            x: Tensor con dimensiones (Batch, Sequence_Length, Input_Dim).
+            x: Tensor (batch, seq_len, 4) con [sin θ, cos θ, dθ/dt, u].
 
         Returns:
-            Tensor de dimensiones (Batch, 1) que representa el torque tau_w^hat.
+            Tensor (batch, 1) con τ̂_w ∈ [-tau_max, tau_max].
         """
-        # out: (Batch, Sequence_Length, Hidden_Dim)
-        out, _ = self.gru(x)
-        
-        # Se extrae únicamente el estado del último paso temporal de la secuencia (L-1)
-        last_step_output = out[:, -1, :]
-        
-        # Proyección final al escalar del torque estimado
-        estimated_torque: torch.Tensor = self.regressor(last_step_output)
-        
-        return estimated_torque
+        if x.shape[-1] != self.input_dim:
+            raise ValueError(
+                f"Dimensión de entrada incorrecta: esperado {self.input_dim}, "
+                f"recibido {x.shape[-1]}. Verificar que la ventana contenga "
+                f"(sin_theta, cos_theta, theta_dot, u)."
+            )
+
+        out, _ = self.gru(x)                    # (batch, seq_len, hidden_dim)
+        last_step = out[:, -1, :]               # (batch, hidden_dim)
+        raw = self.fc(last_step)                # (batch, 1) — sin acotamiento
+        return torch.tanh(raw) * self.tau_max   # (batch, 1) ∈ [-tau_max, tau_max]
