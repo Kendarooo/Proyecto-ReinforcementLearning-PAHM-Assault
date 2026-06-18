@@ -2,7 +2,7 @@
 
 ## Alcance
 
-Este documento registra el uso de modelos de lenguaje durante el trabajo del Grupo 2 en la Etapa 2 del proyecto: representacion no supervisada de perturbaciones y validacion sintetico-real.
+Este documento registra el uso de modelos de lenguaje durante el trabajo del Grupo 2 en la Etapa 2 del proyecto: representacion no supervisada de perturbaciones y validacion sintetico-real. Tambien registra apoyo puntual en la integracion temprana de Etapa 3, especificamente el entorno Gymnasium con perturbaciones automaticas para entrenamiento headless.
 
 ## Modelos de lenguaje utilizados
 
@@ -28,6 +28,15 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
   - identificacion del checkpoint esperado por `gym_wrapper/config.json`;
   - copia del checkpoint exportado `outputs/tau_w/estimador_wind.pth` a `checkpoints/estimator_checkpoint_epoch_40.pth` para cumplir el contrato actual de pruebas y exportacion;
   - creacion de `instructions.md` con comandos de verificacion, ejecucion visual y estado previo a Etapa 3.
+- Implementacion inicial de Etapa 3 en el branch `feature/etapa3-entorno-perturbaciones`, sin crear una carpeta nueva `pahm_stage3`; se extendio el entorno existente en `gym_wrapper/`.
+- Ajuste de `gym_wrapper/learned_pahm_ode.py` para:
+  - permitir import y ejecucion headless sin depender de Pygame;
+  - cargar `config.json` usando `__file__` como ancla en vez del directorio actual de ejecucion;
+  - integrar `WindProcess` como fuente automatica opcional de perturbaciones;
+  - separar `configured_wind_pattern` y `active_wind_pattern`;
+  - reportar `wind_active`, `wind_mag`, `wind_angle`, `wind_torque`, `wind_pattern`, `configured_wind_pattern` y `wind_automatic` en `info`;
+  - mantener `set_wind()` como mecanismo manual para la demo cuando `enable_wind=False`.
+- Creacion de pruebas en `tests/test_learned_pahm_env_wind.py` para el contrato de entorno con perturbaciones.
 
 ## Estrategias de prompting empleadas
 
@@ -61,6 +70,10 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
   - `model_state_dict`
   - `optimizer_state_dict`
 - Se ejecuto la suite completa `tests/` + `test/` despues de colocar el checkpoint esperado por la configuracion actual.
+- Se verifico que el entorno con `render_mode=None` pueda crearse y avanzar pasos con perturbaciones automaticas sin inicializar Pygame.
+- Se verifico la prioridad explicita entre viento automatico (`enable_wind=True`) y viento manual (`set_wind()`).
+- Se verifico la reproducibilidad separando el RNG de Gymnasium (`reset(seed=...)`) del RNG de `WindProcess` (`wind_seed`).
+- Se verifico que el patron configurado en el constructor no se muta cuando `randomize_wind_pattern=True`; el patron sorteado queda en `active_wind_pattern`.
 
 ## Comandos de verificacion
 
@@ -69,12 +82,19 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
 .venv/bin/ruff check pahm_stage2 tests
 .venv/bin/python -m pahm_stage2.validate_synthetic_real --config configs/stage2_config.json
 .venv/bin/python -m pytest tests test -q
+.venv/bin/python -m pytest tests/test_learned_pahm_env_wind.py -q
 ```
 
 Resultado registrado de la suite completa:
 
 ```text
-33 passed, 1 warning
+38 passed, 1 warning
+```
+
+Resultado registrado para el contrato especifico del entorno con perturbaciones:
+
+```text
+5 passed, 1 warning
 ```
 
 ## Recomendaciones tecnicas

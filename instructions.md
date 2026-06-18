@@ -53,7 +53,7 @@ Ejecutar toda la suite:
 Estado verificado:
 
 ```text
-33 passed, 1 warning
+38 passed, 1 warning
 ```
 
 La advertencia proviene de `torch.jit.script` y no bloquea la ejecucion.
@@ -80,6 +80,57 @@ La app permite probar:
 - osciloscopio de PWM y angulo.
 
 El modo `RL` todavia no ejecuta una politica entrenada. Actualmente deja `rl_action = 0.0`; esa integracion corresponde a Etapa 3.
+
+## 4.1. Etapa 3: entorno con perturbaciones
+
+El branch `feature/etapa3-entorno-perturbaciones` trabaja sobre el entorno existente en `gym_wrapper/`; no se creo una carpeta nueva `pahm_stage3`.
+
+El entorno `LearnedPAHMODE` soporta ahora perturbaciones automaticas para entrenamiento headless:
+
+```python
+from gym_wrapper.learned_pahm_ode import LearnedPAHMODE
+
+env = LearnedPAHMODE(
+    render_mode=None,
+    model_path="pahm_model/pahm_fast_v2_best.pth",
+    reset_angle_deg=720,
+    enable_wind=True,
+    wind_pattern="gust",
+    wind_seed=42,
+)
+
+obs, info = env.reset(seed=123, options={"randomize": True})
+obs, reward, terminated, truncated, info = env.step([0.2])
+```
+
+Campos utiles en `info`:
+
+- `wind_active`
+- `wind_mag`
+- `wind_angle`
+- `wind_torque`
+- `wind_pattern`: patron activo del episodio.
+- `configured_wind_pattern`: patron configurado en el constructor.
+- `wind_automatic`: indica si manda `WindProcess`.
+
+Reglas importantes:
+
+- `render_mode=None` no requiere Pygame durante el import ni durante entrenamiento headless.
+- `enable_wind=True` da prioridad a `WindProcess`; `set_wind()` queda para demo/manual cuando `enable_wind=False`.
+- `wind_seed` controla el RNG interno de `WindProcess`.
+- `reset(seed=...)` controla el RNG del entorno Gymnasium, incluyendo estado inicial y seleccion de patron cuando `randomize_wind_pattern=True`.
+
+Tests especificos de este branch:
+
+```bash
+.venv/bin/python -m pytest tests/test_learned_pahm_env_wind.py -q
+```
+
+Estado verificado:
+
+```text
+5 passed, 1 warning
+```
 
 ## 5. Etapa 1: exportar tau_w
 
@@ -123,7 +174,7 @@ Entrenar GMM desde un manifiesto de `tau_w`:
 
 ## 7. Estado para Etapa 3
 
-Etapa 1 y Etapa 2 pasan las pruebas actuales. Para avanzar con Etapa 3A y Etapa 3B falta implementar:
+Etapa 1, Etapa 2 y el primer bloque de Etapa 3 para entorno con perturbaciones pasan las pruebas actuales. Para continuar con Etapa 3A y Etapa 3B falta implementar:
 
 - observacion con `theta_ref` configurable;
 - recompensa de seguimiento respecto a `theta_ref`;

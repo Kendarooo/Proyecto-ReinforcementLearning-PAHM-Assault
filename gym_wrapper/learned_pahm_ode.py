@@ -13,10 +13,12 @@ import gymnasium as gym
 import json
 from gymnasium import spaces
 from gymnasium.error import DependencyNotInstalled
+from pathlib import Path
 from typing import Optional
 
 # Añadir directorio hermano al path para cargar el modelo
-sys.path.append(os.path.join(os.path.dirname(__file__), '../pahm_model'))
+current_dir = os.path.dirname(__file__)
+sys.path.append(os.path.join(current_dir, '../pahm_model'))
 
 try:
     from pahm_ode import PAHMHybridODE
@@ -25,10 +27,28 @@ except ImportError:
     raise ImportError("No se pudieron importar los modelos. Verifique ../pahm_model/")
 
 try:
-    import pygame
-    from pygame import gfxdraw
+    from wind_process import WindProcess
 except ImportError:
-    raise DependencyNotInstalled("pygame required")
+    from gym_wrapper.wind_process import WindProcess
+
+
+def _load_wrapper_config() -> dict:
+    """Carga config.json anclado al archivo, no al directorio de ejecucion."""
+    config_path = Path(__file__).resolve().with_name("config.json")
+    with config_path.open("r", encoding="utf-8") as config_file:
+        return json.load(config_file)
+
+
+def _require_pygame():
+    """Importa Pygame solo cuando se necesita renderizado."""
+    try:
+        import pygame
+        from pygame import gfxdraw
+    except ImportError as exc:
+        raise DependencyNotInstalled(
+            "pygame required for render_mode='human' or 'rgb_array'"
+        ) from exc
+    return pygame, gfxdraw
 
 
 
@@ -61,7 +81,13 @@ class LearnedPAHMODE(gym.Env):
                  model_path="pahm_ode_best.pth",
                  reset_angle_deg=120,
                  dt=0.02,                 # 50Hz por defecto
-                 max_wind_torque=20.0):   # Escala física del torque de viento): # 50Hz por defecto
+                 max_wind_torque=20.0,
+                 enable_wind: bool = False,
+                 wind_pattern: str = "gust",
+                 wind_config: dict | None = None,
+                 wind_seed: int | None = None,
+                 randomize_wind_pattern: bool = False):
+                 # Escala física del torque de viento): # 50Hz por defecto
         
         self.model_path = model_path
         self.render_mode = render_mode
@@ -108,26 +134,78 @@ class LearnedPAHMODE(gym.Env):
         self.wind_active = False
         self.wind_mag = 0.0
         self.wind_angle = 0.0
+        self.wind_torque = 0.0
+        self.enable_wind = enable_wind
+        self.configured_wind_pattern = wind_pattern
+        self.active_wind_pattern = wind_pattern
+        self.randomize_wind_pattern = randomize_wind_pattern
+        self.wind_seed = wind_seed
         # Escala recibida por constructor (SSOT en config.json; la lee el
         # script que instancia el entorno, no el entorno).
         self.max_wind_torque = max_wind_torque
 
+        wrapper_config = _load_wrapper_config()
+        self.wind_patterns_config = wind_config or wrapper_config["wind_patterns"]
+        self.wind_process = None
+        if self.enable_wind:
+            self.wind_process = WindProcess(self.wind_patterns_config, seed=wind_seed)
+            self.wind_process.set_pattern(self.active_wind_pattern)
+            self.wind_active = True
+
         # Cargar configuración visual de partículas
         self.wind_cfg = {"count": 40, "speed": 15.0, "length": 20.0, "color": [100, 240, 255]}
-        try:
-            with open('config.json', 'r') as f:
-                cfg = json.load(f)
-                if "components" in cfg and "wind_particles" in cfg["components"]:
-                    self.wind_cfg = cfg["components"]["wind_particles"]
-        except Exception: pass
+        if "components" in wrapper_config and "wind_particles" in wrapper_config["components"]:
+            self.wind_cfg = wrapper_config["components"]["wind_particles"]
         
         self.particles = np.random.rand(self.wind_cfg["count"], 2) * self.screen_dim        
         
     def set_wind(self, active, mag, angle):
+        """Actualiza viento manual para demo; no sobreescribe WindProcess automatico."""
+        if self.enable_wind:
+            return
         self.wind_active = active
         self.wind_mag = mag
         self.wind_angle = angle
         
+    def _sample_wind_pattern(self) -> str:
+        if self.randomize_wind_pattern:
+            patterns = list(WindProcess.PATTERNS)
+            return str(self.np_random.choice(patterns))
+        return self.configured_wind_pattern
+
+    def _reset_wind_process(self) -> None:
+        if not self.enable_wind:
+            self.wind_torque = 0.0
+            return
+        self.active_wind_pattern = self._sample_wind_pattern()
+        self.wind_process.set_pattern(self.active_wind_pattern)
+        self.wind_active = True
+
+    def _resolve_wind_for_step(self) -> float:
+        if self.enable_wind:
+            self.wind_mag, self.wind_angle = self.wind_process.step(self.dt)
+            self.wind_active = True
+
+        tau_val = 0.0
+        if self.wind_active:
+            tau_val = (
+                self.wind_mag
+                * self.max_wind_torque
+                * np.cos(self.state[0] - self.wind_angle)
+            )
+        self.wind_torque = float(tau_val)
+        return self.wind_torque
+
+    def _wind_info(self) -> dict:
+        return {
+            "wind_active": bool(self.wind_active),
+            "wind_mag": float(self.wind_mag),
+            "wind_angle": float(self.wind_angle),
+            "wind_torque": float(self.wind_torque),
+            "wind_pattern": self.active_wind_pattern if self.enable_wind else "manual",
+            "configured_wind_pattern": self.configured_wind_pattern,
+            "wind_automatic": bool(self.enable_wind),
+        }
 
     def step(self, action):
         self.last_action = action
@@ -145,11 +223,10 @@ class LearnedPAHMODE(gym.Env):
         # Necesitamos 2 puntos para el spline: t=0 y t=dt con el mismo valor
         u_seq = torch.tensor([[[u_val], [u_val]]], dtype=torch.float32) # (1, 2, 1)
 
-        # 1.5. Calcular torque externo de viento si está activo
-        tau_val = 0.0
-        if self.wind_active:
-            tau_val = self.wind_mag * self.max_wind_torque * np.cos(self.state[0] - self.wind_angle)
-            
+        # 1.5. Calcular torque externo de viento.
+        # En entrenamiento headless, enable_wind=True hace que WindProcess mande.
+        # En demo, enable_wind=False conserva el control manual via set_wind().
+        tau_val = self._resolve_wind_for_step()
         tau_seq = torch.tensor([[[tau_val], [tau_val]]], dtype=torch.float32)
         
         # 2. Integración Numérica
@@ -189,7 +266,7 @@ class LearnedPAHMODE(gym.Env):
         if self.render_mode == "human":
             self.render()
 
-        return obs, reward, terminated, False, {}
+        return obs, reward, terminated, False, self._wind_info()
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         """
@@ -233,10 +310,12 @@ class LearnedPAHMODE(gym.Env):
         else:
             self.state = np.array([0.0, 0.0], dtype=np.float32)
         
-        return np.array([self.state[0], self.state[1]], dtype=np.float32), {}        
+        self._reset_wind_process()
+        return np.array([self.state[0], self.state[1]], dtype=np.float32), self._wind_info()        
 
     def render(self):
         if self.render_mode is None: return
+        pygame, gfxdraw = _require_pygame()
 
         if self.screen is None:
             pygame.init()
@@ -318,6 +397,6 @@ class LearnedPAHMODE(gym.Env):
 
     def close(self):
         if self.screen is not None:
+            pygame, _ = _require_pygame()
             pygame.display.quit()
             pygame.quit()
-
