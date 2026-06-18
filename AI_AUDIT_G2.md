@@ -23,6 +23,11 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
 - Creacion y ajuste de pruebas unitarias en `tests/` para extraccion de features, GMM, validacion ARI/NMI, sampler, pipeline sintetico-real y entrenamiento desde manifest.
 - Redaccion de documentacion tecnica en `pahm_stage2/README.md`.
 - Apoyo en interpretacion de resultados de validacion, incluyendo BIC, ARI y NMI.
+- Revision exhaustiva de la integracion entre Etapa 1 y Etapa 2, incluyendo:
+  - verificacion de la ubicacion esperada de `data/`;
+  - identificacion del checkpoint esperado por `gym_wrapper/config.json`;
+  - copia del checkpoint exportado `outputs/tau_w/estimador_wind.pth` a `checkpoints/estimator_checkpoint_epoch_40.pth` para cumplir el contrato actual de pruebas y exportacion;
+  - creacion de `instructions.md` con comandos de verificacion, ejecucion visual y estado previo a Etapa 3.
 
 ## Estrategias de prompting empleadas
 
@@ -49,6 +54,13 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
 - Se verifico que `train_unsupervised.py` falle de forma explicita cuando no existe el manifest y guarde un checkpoint cuando recibe un manifest valido.
 - Se ejecuto la suite de pruebas unitarias con `pytest`.
 - Se ejecuto analisis estatico con `ruff`.
+- Se agrego la carpeta `data/` en la raiz del repositorio y se confirmo que los tests de integracion ya pueden leer los CSV reales.
+- Se verifico que `outputs/tau_w/estimador_wind.pth` contiene las llaves esperadas:
+  - `epoch`
+  - `loss`
+  - `model_state_dict`
+  - `optimizer_state_dict`
+- Se ejecuto la suite completa `tests/` + `test/` despues de colocar el checkpoint esperado por la configuracion actual.
 
 ## Comandos de verificacion
 
@@ -56,7 +68,22 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
 .venv/bin/python -m pytest tests
 .venv/bin/ruff check pahm_stage2 tests
 .venv/bin/python -m pahm_stage2.validate_synthetic_real --config configs/stage2_config.json
+.venv/bin/python -m pytest tests test -q
 ```
+
+Resultado registrado de la suite completa:
+
+```text
+33 passed, 1 warning
+```
+
+## Recomendaciones tecnicas
+
+- La configuracion actual usa el checkpoint final del entrenamiento del estimador de viento, derivado de `epochs = 40` y `checkpoint_dir = "checkpoints/"`, es decir `checkpoints/estimator_checkpoint_epoch_40.pth`.
+- Para una entrega mas defendible, se recomienda guardar y consumir un checkpoint seleccionado por metrica de validacion, por ejemplo `best_estimator_checkpoint.pth`, usando el menor MSE de validacion o una metrica equivalente.
+- Mantener tambien un checkpoint final, por ejemplo `last_estimator_checkpoint.pth`, para reproducibilidad y reanudacion de entrenamiento.
+- Exponer en la configuracion una ruta explicita, por ejemplo `estimator_checkpoint_path`, en lugar de reconstruir el nombre del checkpoint solo a partir de `epochs`.
+- Documentar en el informe cual checkpoint se uso para exportar `tau_w(t)` y bajo que criterio fue seleccionado.
 
 ## Responsabilidad final
 
