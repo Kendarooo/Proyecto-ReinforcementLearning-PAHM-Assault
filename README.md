@@ -31,6 +31,11 @@ El código está organizado siguiendo principios de diseño limpio, separación 
     ├── utils.py               # Solvers numéricos nativos e interpolación por Splines Cúbicos
     ├── train_ode.py           # Script de entrenamiento en dos fases (Física -> Híbrido)
     └── train_pid.py           # Sintonización analítica de ganancias por asignación de polos
+│
+└── etapa2_unsupervised/       # Modelos no supervisados sobre tau_w(t)
+    ├── tau_w_dataset.py       # Lee outputs/tau_w/tau_w_<split>_<idx>.npy sin etiquetas
+    ├── autoencoder.py         # Autoencoder simple
+    └── train_unsupervised.py  # Optimiza solo reconstrucción
 
 ```
 
@@ -96,6 +101,30 @@ Si requieres recalcular las ganancias del lazo de control clásico a partir de l
 python train_pid.py --model_path ../pahm_model/pahm_ode_best.pth --output gym_wrapper/pid_config.json --ts 2.0 --pole_ratio 10.0
 
 ```
+
+### D. Conexión Etapa 1 → Etapa 2 no supervisada
+
+La salida formal de Etapa 1 se produce con:
+
+```bash
+python3 pahm_model/export_tau_w.py
+```
+
+Ese script escribe una señal por trayectoria en `outputs/tau_w/tau_w_<split>_<idx>.npy`. La Etapa 2 consume directamente ese mismo directorio mediante `stage2_unsupervised.tau_w_input_dir` en `gym_wrapper/config.json`.
+
+```bash
+python3 etapa2_unsupervised/train_unsupervised.py --config gym_wrapper/config.json
+```
+
+El entrenamiento de Etapa 2 es no supervisado: el dataloader entrega únicamente ventanas de `tau_w(t)`, sin etiquetas, y el autoencoder optimiza solo error de reconstrucción `MSE(reconstrucción, entrada)`.
+
+Para registrar Etapa 2 en Weights & Biases, primero autentica la sesión:
+
+```bash
+wandb login
+```
+
+Luego activa `stage2_unsupervised.wandb.enabled` en `gym_wrapper/config.json`. Por defecto el proyecto W&B de Etapa 2 es `etapa-2-unsupervised`; Etapa 1 usa el proyecto `etapa-1` desde `pahm_model/train_estimator.py`.
 
 ---
 

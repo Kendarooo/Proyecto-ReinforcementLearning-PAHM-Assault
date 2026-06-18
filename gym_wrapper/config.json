@@ -3,14 +3,22 @@
   "window": {
     "width": 800,
     "height": 700,
-    "bg_color": [255, 255, 255]
+    "bg_color": [
+      255,
+      255,
+      255
+    ]
   },
   "layout": {
     "padding": 15,
     "group_spacing": 20,
     "item_spacing": 4,
     "panel_width": 250,
-    "panel_bg": [240, 240, 240]
+    "panel_bg": [
+      240,
+      240,
+      240
+    ]
   },
   "fonts": {
     "default_size": 24,
@@ -18,18 +26,66 @@
     "small_size": 20
   },
   "colors": {
-    "text": [0, 0, 0],
-    "primary": [0, 100, 200],
-    "primary_hover": [0, 150, 255],
-    "secondary": [100, 100, 100],
-    "secondary_hover": [150, 150, 150],
-    "border": [0, 0, 0],
-    "wind_bg": [220, 220, 220],
-    "wind_arrow": [210, 64, 64],
-    "osc_bg": [20, 20, 20],
-    "osc_grid": [40, 40, 40],
-    "osc_in": [0, 255, 100],
-    "osc_out": [255, 100, 0]
+    "text": [
+      0,
+      0,
+      0
+    ],
+    "primary": [
+      0,
+      100,
+      200
+    ],
+    "primary_hover": [
+      0,
+      150,
+      255
+    ],
+    "secondary": [
+      100,
+      100,
+      100
+    ],
+    "secondary_hover": [
+      150,
+      150,
+      150
+    ],
+    "border": [
+      0,
+      0,
+      0
+    ],
+    "wind_bg": [
+      220,
+      220,
+      220
+    ],
+    "wind_arrow": [
+      210,
+      64,
+      64
+    ],
+    "osc_bg": [
+      20,
+      20,
+      20
+    ],
+    "osc_grid": [
+      40,
+      40,
+      40
+    ],
+    "osc_in": [
+      0,
+      255,
+      100
+    ],
+    "osc_out": [
+      255,
+      100,
+      0
+    ]
   },
   "components": {
     "slider": {
@@ -49,8 +105,12 @@
       "count": 40,
       "speed": 15.0,
       "length": 20.0,
-      "color": [100, 240, 255]
-     }
+      "color": [
+        100,
+        240,
+        255
+      ]
+    }
   },
   "physics": {
     "min_setpoint_deg": 0.0,
@@ -58,9 +118,72 @@
   },
   "wind_patterns": {
     "max_wind_torque": 20.0,
-    "calm":      { "phi_deg": 0.0, "noise_std": 0.02 },
-    "gust":      { "phi_deg": 0.0, "trigger_min_s": 1.0, "trigger_max_s": 4.0, "duration_s": 1.5, "peak_mag": 0.7 },
-    "sustained": { "phi_deg": 0.0, "onset_min_s": 0.5, "onset_max_s": 2.0, "level": 0.4 },
-    "turbulent": { "phi_deg": 0.0, "freq_hz": 0.8, "amp": 0.25, "bias": 0.3, "noise_std": 0.05 }
+    "calm": {
+      "phi_deg": 0.0,
+      "noise_std": 0.02
+    },
+    "gust": {
+      "phi_deg": 0.0,
+      "trigger_min_s": 1.0,
+      "trigger_max_s": 4.0,
+      "duration_s": 1.5,
+      "peak_mag": 0.7
+    },
+    "sustained": {
+      "phi_deg": 0.0,
+      "onset_min_s": 0.5,
+      "onset_max_s": 2.0,
+      "level": 0.4
+    },
+    "turbulent": {
+      "phi_deg": 0.0,
+      "freq_hz": 0.8,
+      "amp": 0.25,
+      "bias": 0.3,
+      "noise_std": 0.05
+    }
+  },
+  "estimator_hyperparameters": {
+    "random_seed": 42,
+    "dt": 0.02,
+    "sequence_length": 5,
+    "hidden_dim": 64,
+    "num_layers": 2,
+    "learning_rate": 0.001,
+    "batch_size": 64,
+    "epochs": 40,
+    "lambda_1_pars": 0.01,
+    "lambda_2_smooth": 0.05,
+    "checkpoint_interval_epochs": 5,
+    "checkpoint_dir": "checkpoints/",
+    "tau_w_output_dir": "outputs/tau_w",
+    "grad_clip_norm": 1.0,
+    "truncate_every": 32,
+    "tau_max": 2.0
+  },
+  "stage2_unsupervised": {
+    "model_type": "autoencoder",
+    "tau_w_input_dir": "outputs/tau_w",
+    "window_size": 128,
+    "stride": 32,
+    "hidden_dim": 64,
+    "latent_dim": 8,
+    "learning_rate": 0.001,
+    "batch_size": 64,
+    "epochs": 30,
+    "random_seed": 42,
+    "checkpoint_dir": "outputs/stage2_unsupervised",
+    "wandb": {
+      "enabled": true,
+      "project": "etapa-2-unsupervised",
+      "entity": null,
+      "name": "tau-w-autoencoder",
+      "mode": "online",
+      "tags": [
+        "stage-2",
+        "unsupervised",
+        "tau-w"
+      ]
+    }
   }
 }
