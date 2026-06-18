@@ -32,6 +32,10 @@ Convierte señales `tau_w(t)` de longitud variable en vectores de tamaño fijo. 
 
 Implementa el modelo no supervisado basado en GMM. Entrena varios modelos, selecciona el número de componentes con BIC, predice clusters y permite guardar/cargar checkpoints.
 
+### `train_unsupervised.py`
+
+Entrena el modelo no supervisado productivo a partir del manifest de señales `tau_w(t)` generado por `generate_tau_w.py`. Extrae features, ajusta el GMM con selección por BIC, guarda el checkpoint configurado y registra métricas en W&B.
+
 ### `validator.py`
 
 Contiene utilidades de validación. Para datos sintéticos con etiquetas conocidas calcula ARI y NMI; para datos reales sin etiquetas resume la distribución de clusters de forma exploratoria.
@@ -53,9 +57,17 @@ trayectorias .npy
   -> generate_tau_w.py
   -> tau_w_<id>.npy + manifest
   -> feature_extractor.py
-  -> unsupervised_model.py
+  -> train_unsupervised.py
   -> validator.py / wind_sampler.py
 ```
+
+## Entrenamiento no supervisado productivo
+
+```bash
+python -m pahm_stage2.train_unsupervised --config configs/stage2_config.json
+```
+
+Este script requiere que ya exista el manifest configurado en `outputs.manifest_path`. Si el manifest no existe, primero se debe ejecutar `generate_tau_w.py` o esperar la entrega I-1 de Etapa 1.
 
 ## Validación sintético-real
 

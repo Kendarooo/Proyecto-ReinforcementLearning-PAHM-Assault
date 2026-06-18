@@ -18,8 +18,9 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
   - `validator.py`
   - `wind_sampler.py`
   - `validate_synthetic_real.py`
+  - `train_unsupervised.py`
 - Actualizacion de `configs/stage2_config.json` para centralizar parametros de modelo, validacion, rutas y W&B.
-- Creacion y ajuste de pruebas unitarias en `tests/` para extraccion de features, GMM, validacion ARI/NMI, sampler y pipeline sintetico-real.
+- Creacion y ajuste de pruebas unitarias en `tests/` para extraccion de features, GMM, validacion ARI/NMI, sampler, pipeline sintetico-real y entrenamiento desde manifest.
 - Redaccion de documentacion tecnica en `pahm_stage2/README.md`.
 - Apoyo en interpretacion de resultados de validacion, incluyendo BIC, ARI y NMI.
 
@@ -45,6 +46,7 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
   - `NMI = 1.0`
   - `n_components_selected = 4`
 - Se reviso que el script no falle cuando todavia no existe el manifest real de `tau_w(t)`.
+- Se verifico que `train_unsupervised.py` falle de forma explicita cuando no existe el manifest y guarde un checkpoint cuando recibe un manifest valido.
 - Se ejecuto la suite de pruebas unitarias con `pytest`.
 - Se ejecuto analisis estatico con `ruff`.
 
