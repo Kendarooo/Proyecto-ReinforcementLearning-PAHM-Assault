@@ -160,5 +160,30 @@
     "grad_clip_norm": 1.0,
     "truncate_every": 32,
     "tau_max": 2.0
+  },
+  "stage2_unsupervised": {
+    "model_type": "autoencoder",
+    "tau_w_input_dir": "outputs/tau_w",
+    "window_size": 128,
+    "stride": 32,
+    "hidden_dim": 64,
+    "latent_dim": 8,
+    "learning_rate": 0.001,
+    "batch_size": 64,
+    "epochs": 30,
+    "random_seed": 42,
+    "checkpoint_dir": "outputs/stage2_unsupervised",
+    "wandb": {
+      "enabled": true,
+      "project": "etapa-2-unsupervised",
+      "entity": null,
+      "name": "tau-w-autoencoder",
+      "mode": "online",
+      "tags": [
+        "stage-2",
+        "unsupervised",
+        "tau-w"
+      ]
+    }
   }
 }
