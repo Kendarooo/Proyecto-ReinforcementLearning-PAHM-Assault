@@ -244,7 +244,7 @@ Demo interactiva con politica RL:
   --config configs/stage3_config.json
 ```
 
-La seccion `demo` permite seleccionar `rl_model_type` (`naive` o `robust`), rutas de modelos y `deterministic_policy`. Tambien se puede usar `--rl_model` para cargar una politica concreta.
+La seccion `demo` permite seleccionar `rl_model_type` (`naive` o `robust`), rutas de modelos, `deterministic_policy`, `interactive_wind`, `show_particles` y `show_wind_torque`. Tambien se puede usar `--rl_model` para cargar una politica concreta. Durante la demo, mantener presionada la tecla `G` activa una rafaga manual configurada en `wind.manual_gust_*` sin entrenar modelos.
 
 Para continuar con Etapa 3B falta:
 
@@ -254,5 +254,5 @@ Para continuar con Etapa 3B falta:
 Estado verificado de la suite completa:
 
 ```text
-78 passed, 1 skipped, 16 warnings
+83 passed, 1 skipped, 16 warnings
 ```

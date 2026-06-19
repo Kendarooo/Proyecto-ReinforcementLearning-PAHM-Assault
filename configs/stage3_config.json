@@ -20,7 +20,10 @@
     ],
     "default_pattern": "gust",
     "max_torque": 20.0,
-    "stochastic": true
+    "stochastic": true,
+    "manual_gust_enabled": true,
+    "manual_gust_torque": 5.0,
+    "manual_gust_duration": 1.0
   },
   "domain_randomization": {
     "enabled": true,
@@ -67,7 +70,10 @@
       "robust": "../artifacts/stage3/models/pahm_ppo_robust.zip"
     },
     "deterministic_policy": true,
-    "render": true
+    "render": true,
+    "interactive_wind": true,
+    "show_particles": true,
+    "show_wind_torque": true
   },
   "wandb": {
     "enabled": true,

@@ -467,7 +467,7 @@ class LearnedPAHMODE(gym.Env):
         self.surf.fill((255, 255, 255))
 
         # --- Flujo de Viento (Sistema de Partículas en Fondo) ---
-        if self.wind_active and self.wind_mag > 0.01:
+        if self.wind_cfg.get("enabled", True) and self.wind_active and self.wind_mag > 0.01:
             dx = np.cos(self.wind_angle) * self.wind_mag * self.wind_cfg["speed"]
             dy = np.sin(self.wind_angle) * self.wind_mag * self.wind_cfg["speed"]
             c_color = tuple(self.wind_cfg["color"])

@@ -54,9 +54,10 @@ def load_rl_policy(model_path: str | Path, algorithm: str = "PPO"):
 def predict_rl_action(policy, observation, action_space, deterministic: bool = True):
     """Predice una acción y la adapta al espacio de acciones del entorno."""
     action, _ = policy.predict(observation, deterministic=deterministic)
-    action = np.asarray(action, dtype=action_space.dtype).reshape(action_space.shape)
+    action_dtype = getattr(action_space, "dtype", np.float32)
+    action = np.asarray(action, dtype=action_dtype).reshape(action_space.shape)
     action = np.clip(action, action_space.low, action_space.high)
-    return action.astype(action_space.dtype)
+    return action.astype(action_dtype)
 
 
 def apply_rl_control_step(

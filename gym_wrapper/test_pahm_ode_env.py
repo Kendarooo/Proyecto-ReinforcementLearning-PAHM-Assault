@@ -33,6 +33,21 @@ except ImportError:
     from gym_wrapper.wind_process import WindProcess
 
 try:
+    from demo_wind import (
+        ManualGustController,
+        demo_wind_settings,
+        handle_wind_event,
+        resolve_demo_wind,
+    )
+except ImportError:
+    from gym_wrapper.demo_wind import (
+        ManualGustController,
+        demo_wind_settings,
+        handle_wind_event,
+        resolve_demo_wind,
+    )
+
+try:
     from rl_policy import (
         apply_rl_control_step,
         get_demo_model_path,
@@ -89,6 +104,10 @@ def main():
     parser.add_argument('--config', type=str, default='', help='Ruta a configuración Stage 3 para demo RL')
     parser.add_argument('--rl_model', type=str, default='', help='Ruta explícita a política RL .zip')
     args = parser.parse_args()
+
+    stage3_config, stage3_config_dir = _load_stage3_config(args.config)
+    visual_config = stage3_config or CONFIG
+    wind_demo_settings = demo_wind_settings(visual_config)
     
     pygame.init()
     screen_width = CONFIG["window"]["width"]
@@ -102,6 +121,7 @@ def main():
                                   model_path=args.model, 
                                   reset_angle_deg=args.reset_angle,
                                   max_wind_torque=CONFIG["wind_patterns"]["max_wind_torque"])
+        base_env.wind_cfg["enabled"] = wind_demo_settings["show_particles"]
         env = TimeLimit(base_env, max_episode_steps=args.max_steps)
     except Exception as e:
         print(f"❌ Error iniciando entorno: {e}")
@@ -120,7 +140,6 @@ def main():
         controller.radio_group.options.remove("PID")
         controller.ui_tree.pack()
 
-    stage3_config, stage3_config_dir = _load_stage3_config(args.config)
     rl_policy = None
     rl_model_path = None
     try:
@@ -140,6 +159,9 @@ def main():
     deterministic_policy = bool(
         stage3_config.get("demo", {}).get("deterministic_policy", True)
     )
+    manual_gust = ManualGustController.from_config(visual_config)
+    if not wind_demo_settings["interactive_wind"]:
+        manual_gust.enabled = False
     
     scope = Oscilloscope()
 
@@ -159,6 +181,7 @@ def main():
     
     obs, _ = env.reset()
     running = True
+    sim_time = 0.0
     
     # Manejo de señal para cierre limpio
     def signal_handler(sig, frame):
@@ -176,6 +199,7 @@ def main():
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                handle_wind_event(event, manual_gust, pygame_module=pygame, t=sim_time)
                 controller.handle_event(event)
 
             controller.update(mouse_pos)
@@ -194,7 +218,22 @@ def main():
                 # Manual o viento inactivo: usar el control polar (o no inyectar)
                 w_mag, w_angle = man_mag, man_angle
                 last_wind_pattern = None
-            env.unwrapped.set_wind(active, w_mag, w_angle)
+
+            demo_wind_state = resolve_demo_wind(
+                base_active=active,
+                base_mag=w_mag,
+                base_angle=w_angle,
+                theta=float(base_env.state[0]),
+                max_wind_torque=base_env.max_wind_torque,
+                gust_controller=manual_gust,
+                t=sim_time,
+                particles_enabled=wind_demo_settings["show_particles"],
+            )
+            env.unwrapped.set_wind(
+                demo_wind_state.active,
+                demo_wind_state.mag,
+                demo_wind_state.angle,
+            )
             
             pid_action = 0.0
             rl_action = 0.0
@@ -228,10 +267,19 @@ def main():
                 )
             else:
                 obs, reward, terminated, truncated, info = env.step(action)
+            info.update(demo_wind_state.info())
+            info.setdefault("control_mode", controller.current_mode)
             
             # Osciloscopio
             angle_disp = obs[0] if len(obs) > 0 else 0.0
             scope.add_sample(info.get("rl_action", action[0]), angle_disp)
+            if wind_demo_settings["show_wind_torque"]:
+                pygame.display.set_caption(
+                    "Neural ODE PAHM: "
+                    f"{args.model} | mode={controller.current_mode} "
+                    f"| wind_tau={info['wind_torque']:.3f} "
+                    f"| gust={info['manual_gust_active']}"
+                )
             
             # Render
             screen.fill((255,255,255))
@@ -250,6 +298,7 @@ def main():
             
             pygame.display.flip()
             clock.tick(50)
+            sim_time += base_env.dt
             
             if terminated or truncated:
                 env.reset()

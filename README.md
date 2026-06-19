@@ -152,7 +152,7 @@ python gym_wrapper/test_pahm_ode_env.py \
   --config configs/stage3_config.json
 ```
 
-La sección `demo` permite elegir `rl_model_type` (`naive` o `robust`) y las rutas de modelos entrenados. También se puede pasar una ruta explícita con `--rl_model`.
+La sección `demo` permite elegir `rl_model_type` (`naive` o `robust`), rutas de modelos entrenados, `deterministic_policy`, `interactive_wind`, `show_particles` y `show_wind_torque`. También se puede pasar una ruta explícita con `--rl_model`. En la demo, mantener presionada la tecla `G` inyecta una ráfaga manual configurada en `wind.manual_gust_*`; esto no entrena modelos y permite observar la respuesta de la política RL ante perturbaciones en tiempo real.
 
 El script de entrenamiento RL vive en `train_rl.py` y opera en modo *headless* (sin renderizado gráfico). Lee `rl_training`, `experiments` y `wandb` desde `gym_wrapper/config.json`, permite modos `naive` y `robust`, y guarda modelos separados en la ruta configurada:
 
