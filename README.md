@@ -1,4 +1,3 @@
-
 [![Open in Visual Studio Code](https://classroom.github.com/assets/open-in-vscode-2e0aaae1b6195c2367325f4f02e2d04e9abb55f0b24a779b69b11b9e10269abc.svg)](https://classroom.github.com/online_ide?assignment_repo_id=24080422&assignment_repo_type=AssignmentRepo)
 # PAHM (Péndulo Amortiguado con Hélice a Motor) — Código Base
 ## EL5857 Aprendizaje Automático
@@ -13,31 +12,115 @@ Este repositorio contiene la línea base de software e infraestructura de simula
 
 El código está organizado siguiendo principios de diseño limpio, separación de responsabilidades (SRP) y el patrón Composite para la interfaz gráfica.
 
-
 ```text
-├── gym_wrapper/               # Entorno de Simulación e Interfaz Gráfica
-│   ├── config.json            # Parámetros visuales, geometría y colores (SSOT Layout)
-│   ├── pid_config.json        # Ganancias calculadas Kp, Ki, Kd de la planta linealizada
-│   ├── learned_pahm_ode.py    # Entorno Gymnasium de la planta (Neural ODE / Fast RNN)
-│   ├── pahm_ui.py             # Módulo de UI en Pygame (VBox, HBox, Controles Polares)
-│   ├── wind_process.py        # Generador exógeno estocástico de patrones de viento
-│   ├── pid.py                 # Implementación del controlador PID con compensación cuadrática
-│   └── test_pahm_ode_env.py   # Lazo principal interactivo y demostración visual
+├── docs/                          # Enunciado del proyecto y división de tareas
+│   ├── proy2.pdf
+│   └── division_tareas_proy2.pdf
 │
-└── pahm_model/                # Modelos Dinámicos y Scripts de Entrenamiento
-    ├── dataloader.py          # Utilidad para carga y segmentación de datos reales en RAM
-    ├── pahm_fast.py           # Modelo de célula recurrente física (Physics RNN con RK4)
-    ├── pahm_ode.py            # Modelo híbrido Neural ODE (vía torchdiffeq)
-    ├── utils.py               # Solvers numéricos nativos e interpolación por Splines Cúbicos
-    ├── train_ode.py           # Script de entrenamiento en dos fases (Física -> Híbrido)
-    └── train_pid.py           # Sintonización analítica de ganancias por asignación de polos
+├── configs/                       # Configuración por etapa (JSON)
+│   ├── stage2_config.json
+│   └── stage3_config.json
 │
-└── etapa2_unsupervised/       # Modelos no supervisados sobre tau_w(t)
-    ├── tau_w_dataset.py       # Lee outputs/tau_w/tau_w_<split>_<idx>.npy sin etiquetas
-    ├── autoencoder.py         # Autoencoder simple
-    └── train_unsupervised.py  # Optimiza solo reconstrucción
-
+├── gym_wrapper/                   # Entorno de Simulación e Interfaz Gráfica
+│   ├── config.json                 # Parámetros visuales, geometría, colores y viento (SSOT Layout)
+│   ├── pid_config.json             # Ganancias calculadas Kp, Ki, Kd de la planta linealizada
+│   ├── learned_pahm_ode.py         # Entorno Gymnasium de la planta (Neural ODE / Fast RNN)
+│   ├── pahm_ui.py                  # Módulo de UI en Pygame (VBox, HBox, Controles Polares)
+│   ├── wind_process.py             # Generador exógeno estocástico de patrones de viento
+│   ├── wind_source.py              # Fuente de viento configurable (WindSource)
+│   ├── pid.py                      # Implementación del controlador PID con compensación cuadrática
+│   ├── rl_policy.py                # Carga y acoplamiento de políticas RL en la demo
+│   ├── demo_wind.py                # Demostración interactiva de inyección de viento
+│   ├── test_pahm_ode_env.py        # Lazo principal interactivo y demostración visual
+│   ├── test_pahm_env.py            # Pruebas del entorno Gymnasium
+│   └── pahm_ode.py                 # Enlace simbólico → pahm_model/pahm_ode.py
+│
+├── pahm_model/                     # Modelos Dinámicos y Etapa 1 (Estimador de Viento)
+│   ├── dataloader.py                # Carga y segmentación de datos reales en RAM
+│   ├── pahm_fast.py                 # Physics RNN con paso RK4 (PAHMFastModel)
+│   ├── pahm_fast_v2_best.pth        # Checkpoint preentrenado del profesor (CON-1)
+│   ├── pahm_ode.py                  # Modelo híbrido Neural ODE
+│   ├── pahm_ode_v4_best.pth         # Checkpoint baseline ODE + residual
+│   ├── utils.py                     # Solvers numéricos e interpolación por Splines Cúbicos
+│   ├── train_ode.py                 # Entrenamiento en dos fases (Física → Híbrido)
+│   ├── train_pid.py                 # Sintonización analítica de ganancias por asignación de polos
+│   ├── test_ode.py                  # Evaluación comparativa de trayectorias en lazo abierto
+│   ├── sequence_estimator.py        # Etapa 1 (FR-4): GRU que infiere τ_w(t) — CON-2
+│   ├── rk4_integrator.py            # Etapa 1 (FR-5): inyecta τ_w(t) aditivo en el paso RK4
+│   ├── custom_loss.py               # Etapa 1 (FR-6): pérdida triple (Ec. 13)
+│   ├── compute_residuals.py         # Etapa 1 (FR-3): calcula r(t) = θ_obs − θ_ODE
+│   ├── train_estimator.py           # Etapa 1 (FR-4/5/6): entrena el estimador GRU
+│   └── export_tau_w.py              # Etapa 1 (I-1): exporta τ_w(t) + checkpoint para Grupo 2
+│
+├── pahm_stage2/                    # Etapa 2 — Representación No Supervisada
+│   ├── config.py                     # Configuración de la etapa
+│   ├── estimator_interface.py        # Interfaz hacia el estimador de Etapa 1
+│   ├── feature_extractor.py          # Extracción de características desde τ_w(t)
+│   ├── unsupervised_model.py         # Modelo no supervisado (autoencoder/VAE/GMM)
+│   ├── train_unsupervised.py         # Entrenamiento no supervisado
+│   ├── generate_tau_w.py             # Generación de τ_w(t) para consumo de Etapa 2
+│   ├── tau_dataset.py                # Dataset sin etiquetas sobre τ_w(t)
+│   ├── validate_synthetic_real.py    # Validación sintético → real (ARI/NMI)
+│   ├── validator.py                  # Lógica de validación de complejidad
+│   ├── wind_sampler.py               # Muestreador de perturbaciones (I-3 hacia Grupo 1)
+│   ├── artifacts.py                  # Persistencia de artefactos de la etapa
+│   └── README.md                     # Documentación específica de Etapa 2
+│
+├── pahm_stage3/                    # Etapa 3 — Telemetría de Control Robusto (RL)
+│   └── wandb_logger.py                # Logger centralizado de W&B para entrenamiento/evaluación
+│
+├── etapa2_unsupervised/            # (Legado/duplicado de pahm_stage2 — ver nota abajo)
+│   ├── autoencoder.py
+│   ├── tau_w_dataset.py
+│   └── train_unsupervised.py
+│
+├── etapa-0-DemonAttack/            # Etapa 0 individual — DQN sobre Atari DemonAttack
+├── etapa0-assault-kendall/         # Etapa 0 individual — DQN sobre Atari Assault
+│
+├── test/                           # Pruebas unitarias — Etapa 1 (TDD, NFR-6)
+│   ├── test_checkpoint_persistence.py
+│   ├── test_custom_loss.py
+│   ├── test_rk4_integrator.py
+│   ├── test_verification.py
+│   └── test_stage2_unsupervised.py
+│
+├── tests/                          # Pruebas unitarias — Etapas 2 y 3
+│   ├── test_feature_extractor.py
+│   ├── test_tau_dataset.py
+│   ├── test_unsupervised_model.py
+│   ├── test_validator.py
+│   ├── test_validate_synthetic_real.py
+│   ├── test_wind_sampler.py
+│   ├── test_generate_tau_w.py
+│   ├── test_train_unsupervised.py
+│   ├── test_learned_pahm_env_wind.py
+│   ├── test_demo_interactive_wind.py
+│   ├── test_rl_policy_demo.py
+│   ├── test_train_rl.py
+│   ├── test_evaluate_controllers.py
+│   └── test_stage3_wandb_logger.py
+│
+├── artifacts/                      # Resultados generados por Etapas 2 y 3
+│   ├── stage2/
+│   └── stage3/
+│
+├── data/                           # CSVs reales del laboratorio (provistos por la cátedra)
+│
+├── outputs/
+│   └── tau_w/                      # Hito I-1: datos resultantes de la extracción de Etapa 1
+│
+├── train_rl.py                     # Etapa 3: entrenamiento de agentes RL (naive/robusto)
+├── evaluate_controllers.py         # Etapa 3: comparación cuantitativa de controladores
+├── AI_AUDIT.md                     # Auditoría de uso de IA
+├── instructions.md                 # Notas/instrucciones internas del equipo
+├── state_project_etapa1.md         # Bitácora de estado de avance de Etapa 1
+├── requirements.txt
+└── README.md
 ```
+
+> **Nota:** `etapa2_unsupervised/` y `pahm_stage2/` contienen funcionalidad solapada para la Etapa 2. Antes de la entrega final hay que confirmar cuál es la versión vigente y eliminar la que quede obsoleta para evitar ambigüedad en la revisión de código.
+
+> **Nota:** `AI_AUDIT.md` (Grupo 1) y `AI_AUDIT_G2.md` (Grupo 2) deben fusionarse en un único `AI_AUDIT.md` antes de la entrega final, conforme a CON-4 ("el repositorio deberá incluir **un** archivo AI_AUDIT.md"). Pendiente de trabajar en una sesión posterior.
 
 ---
 
@@ -81,7 +164,59 @@ python test_pahm_ode_env.py  --reset_angle 720 --max_steps 10000000 --model ../p
 * **Panel de Modos:** Permite alternar entre entradas manuales, señales senoidales, control analítico PID, o el agente RL.
 * **Perturbación de Viento:** Al activar el interruptor de viento, es posible seleccionar patrones preconfigurados (`Calm`, `Gust`, `Sust`, `Turb`) o modular vectorialmente la magnitud y dirección arrastrando el mouse sobre el control polar circular.
 
-### B. Entrenamiento de la Dinámica Híbrida (Neural ODE / Fast RNN)
+### B. Etapa 1 — Estimacion de Perturbaciones de Viento (FR-3 a FR-7)
+
+Esta etapa construye un estimador recurrente (GRU) que infiere el torque de viento latente tau_w(t) a partir del historial cinematico reciente `(sin theta, cos theta, dtheta/dt, u)`, sin acceso directo al residuo `r(t) = theta_obs - theta_ODE` (restriccion **CON-2**). El modelo fisico base del profesor (`pahm_fast_v2_best.pth`) permanece congelado durante todo el proceso (**CON-1**).
+
+**Paso 1 - Calculo de residuos (FR-3).** Diagnostico inicial: corre la ODE base en lazo abierto sobre todo el dataset y calcula `r(t)` por trayectoria, generando una tabla de MSE/maximo/desviacion estandar. Los flags son opcionales — por defecto usa `gym_wrapper/config.json`, `data/` y `outputs/residuals/`:
+
+```bash
+python pahm_model/compute_residuals.py
+```
+
+Si tu estructura de carpetas difiere de la convención del repo, puedes sobrescribir cualquiera de las tres rutas:
+
+```bash
+python pahm_model/compute_residuals.py --config gym_wrapper/config.json --data_dir data --output_dir outputs/residuals
+```
+
+**Paso 2 - Entrenamiento del estimador (FR-4, FR-5, FR-6).** Entrena la GRU con la funcion de perdida de tres terminos (reconstruccion + parsimonia + suavidad temporal, Ecuacion 13) usando *Truncated BPTT* y *gradient clipping* para estabilidad numerica:
+
+```bash
+python pahm_model/train_estimator.py
+```
+
+El directorio de checkpoints (`estimator_hyperparameters.checkpoint_dir` en `config.json`, por defecto `checkpoints/`) se crea automáticamente al iniciar el entrenamiento — no requiere preparación manual.
+
+Todos los hiperparametros (arquitectura de la GRU, `lambda1`/`lambda2`, `learning_rate`, `tau_max`, semilla, `dt`) se leen desde `gym_wrapper/config.json` bajo `estimator_hyperparameters` -- no hay valores hardcodeados (**NFR-1**). El progreso se registra en Weights & Biases bajo el proyecto `etapa-1`, y los checkpoints se guardan periodicamente en `checkpoints/` (**NFR-2**, **NFR-3**).
+
+> **Nota de diseno:** la salida de la GRU esta acotada con `tanh(x) * tau_max` para evitar que el estimador colapse a torques no fisicos durante el entrenamiento. `tau_max` es configurable en `estimator_hyperparameters.tau_max` (valor por defecto: `2.0`, calibrado contra el rango de residuos observado en el Paso 1).
+
+**Paso 3 - Comparacion cuantitativa (FR-7).** La suite de pruebas incluye la evaluacion en lazo abierto sobre el conjunto de prueba retenido, comparando ODE pura vs. ODE + estimador GRU:
+
+```bash
+pytest test/test_verification.py::test_open_loop_baseline_comparison_fr7 -v -s
+```
+
+El test requiere que exista el checkpoint final del estimador (`checkpoints/estimator_checkpoint_epoch_<epochs>.pth`) y la carpeta `data/` con los CSV del laboratorio. Imprime el MSE de ambas configuraciones y la mejora relativa; falla si el estimador no iguala o supera a la ODE pura.
+
+**Paso 4 - Exportacion hacia el Grupo 2 (Hito I-1).** Una vez completado el entrenamiento, genera la senal tau_w(t) para todas las trayectorias y el checkpoint final empaquetado:
+
+```bash
+python pahm_model/export_tau_w.py
+```
+
+Esto produce `outputs/tau_w/tau_w_<split>_<idx>.npy` por trayectoria y copia el checkpoint final como `outputs/tau_w/estimador_wind.pth` -- los dos artefactos formales del Hito I-1 (ver seccion 4 de `division_tareas_proy2.pdf`).
+
+**Pruebas unitarias de la Etapa 1 (NFR-6):**
+
+```bash
+pytest test/ -v
+```
+
+Cubre: reproduccion de parametros fisicos conocidos (a), dimensionalidad correcta del estimador (b), salida nula del estimador ante datos sin perturbacion (c), persistencia de checkpoints (e), y recuperacion de un torque sintetico conocido dentro de tolerancia (f).
+
+### C. Entrenamiento de la Dinamica Hibrida (Neural ODE / Fast RNN)
 
 Para entrenar el modelo de caja gris a partir de capturas de laboratorio usando el enfoque de sliding windows sobre memoria RAM:
 
@@ -93,7 +228,7 @@ python train_ode.py --model_type fast --epochs 100 --warmup_epochs 20 --data_dir
 
 *Este script opera en dos fases autónomas: congela la red neuronal residual durante los `warmup_epochs` para forzar la convergencia de los parámetros físicos reales ($\alpha, \beta, \gamma$), y posteriormente libera los pesos neuronales para ajustar la dinámica fina no modelada.*
 
-### C. Sintonización Analítica del PID
+### D. Sintonización Analítica del PID
 
 Si requieres recalcular las ganancias del lazo de control clásico a partir de la física aprendida por un punto de control `.pth`:
 
@@ -102,15 +237,9 @@ python train_pid.py --model_path ../pahm_model/pahm_ode_best.pth --output gym_wr
 
 ```
 
-### D. Conexión Etapa 1 → Etapa 2 no supervisada
+### E. Conexión Etapa 1 → Etapa 2 no supervisada
 
-La salida formal de Etapa 1 se produce con:
-
-```bash
-python3 pahm_model/export_tau_w.py
-```
-
-Ese script escribe una señal por trayectoria en `outputs/tau_w/tau_w_<split>_<idx>.npy`. La Etapa 2 consume directamente ese mismo directorio mediante `stage2_unsupervised.tau_w_input_dir` en `gym_wrapper/config.json`.
+La Etapa 1 produce su artefacto formal de salida en el Paso 4 de la sección B (`python pahm_model/export_tau_w.py`), que escribe una señal por trayectoria en `outputs/tau_w/tau_w_<split>_<idx>.npy`. La Etapa 2 consume directamente ese mismo directorio mediante `stage2_unsupervised.tau_w_input_dir` en `gym_wrapper/config.json`.
 
 ```bash
 python3 etapa2_unsupervised/train_unsupervised.py --config gym_wrapper/config.json
