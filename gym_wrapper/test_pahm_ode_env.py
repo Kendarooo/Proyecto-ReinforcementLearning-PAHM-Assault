@@ -10,6 +10,7 @@ import numpy as np
 import pygame
 import signal
 import argparse
+from pathlib import Path
 
 try:
     from learned_pahm_ode import LearnedPAHMODE
@@ -31,12 +32,62 @@ try:
 except ImportError:
     from gym_wrapper.wind_process import WindProcess
 
+try:
+    from rl_policy import (
+        apply_rl_control_step,
+        get_demo_model_path,
+        load_rl_policy,
+        predict_rl_action,
+    )
+except ImportError:
+    from gym_wrapper.rl_policy import (
+        apply_rl_control_step,
+        get_demo_model_path,
+        load_rl_policy,
+        predict_rl_action,
+    )
+
+
+def _load_stage3_config(config_path: str | None) -> tuple[dict, Path | None]:
+    if not config_path:
+        return {}, None
+    path = Path(config_path).resolve()
+    import json
+
+    with path.open("r", encoding="utf-8") as config_file:
+        return json.load(config_file), path.parent
+
+
+def _init_rl_policy(config: dict, config_dir: Path | None, explicit_model: str | None):
+    demo_config = config.get("demo", {})
+    if explicit_model:
+        model_path = Path(explicit_model)
+        if not model_path.is_absolute() and config_dir is not None:
+            model_path = config_dir / model_path
+    elif demo_config:
+        model_path = get_demo_model_path(
+            config,
+            model_type=demo_config.get("rl_model_type"),
+            base_dir=config_dir,
+        )
+    else:
+        return None, None
+
+    policy = load_rl_policy(
+        model_path,
+        algorithm=config.get("rl_training", {}).get("algorithm", "PPO"),
+    )
+    return policy, model_path
+
+
 def main():
     parser = argparse.ArgumentParser(description='Test Neural ODE Environment')
     parser.add_argument('--model', type=str, required=True, help='Ruta al archivo .pth del modelo ODE')
     parser.add_argument('--reset_angle', type=float, default=180, help='Ángulo de reset en grados')
     parser.add_argument('--max_steps', type=int, default=2000, help='Máximo número de pasos por episodio')
     parser.add_argument('--pid', type=str, default='', help='Ruta al archivo json de configuración del PID')
+    parser.add_argument('--config', type=str, default='', help='Ruta a configuración Stage 3 para demo RL')
+    parser.add_argument('--rl_model', type=str, default='', help='Ruta explícita a política RL .zip')
     args = parser.parse_args()
     
     pygame.init()
@@ -68,6 +119,27 @@ def main():
     if not pid_controller and "PID" in controller.radio_group.options:
         controller.radio_group.options.remove("PID")
         controller.ui_tree.pack()
+
+    stage3_config, stage3_config_dir = _load_stage3_config(args.config)
+    rl_policy = None
+    rl_model_path = None
+    try:
+        rl_policy, rl_model_path = _init_rl_policy(
+            stage3_config,
+            stage3_config_dir,
+            args.rl_model or None,
+        )
+        if rl_policy is not None:
+            print(f"✅ Política RL cargada: {rl_model_path}")
+    except Exception as exc:
+        print(f"⚠️ No se cargó política RL: {exc}")
+        if "RL" in controller.radio_group.options:
+            controller.radio_group.options.remove("RL")
+            controller.ui_tree.pack()
+
+    deterministic_policy = bool(
+        stage3_config.get("demo", {}).get("deterministic_policy", True)
+    )
     
     scope = Oscilloscope()
 
@@ -129,25 +201,37 @@ def main():
             if pid_controller and controller.current_mode == "PID":
                 current_angle = obs[0] if len(obs) > 0 else 0.0
                 pid_action = pid_controller.compute(controller.setpoint_rad, current_angle, base_env.dt)
-            elif controller.current_mode == "RL":
-                # -----------------------------------------------------------
-                # POR HACER: Inserte aquí el acoplamiento de su modelo RL.
-                # Deben pasar la observación (obs) a su agente entrenado
-                # y asignar la acción calculada a la variable `rl_action`.
-                # -----------------------------------------------------------
-                rl_action = 0.0
+            elif controller.current_mode == "RL" and rl_policy is not None:
+                obs = base_env._get_obs()
+                rl_action = float(
+                    predict_rl_action(
+                        rl_policy,
+                        obs,
+                        env.action_space,
+                        deterministic=deterministic_policy,
+                    )[0]
+                )
                 
             if pid_controller and controller.current_mode != "PID":
                 pid_controller.reset()
             
             action_value = controller.get_action(rl_agent_action=rl_action, pid_action=pid_action)
 
-            action = np.array([action_value])
-            obs, reward, terminated, truncated, _ = env.step(action)
+            action = np.array([action_value], dtype=np.float32)
+            if controller.current_mode == "RL" and rl_policy is not None:
+                obs, reward, terminated, truncated, info = apply_rl_control_step(
+                    env,
+                    rl_policy,
+                    obs,
+                    deterministic=deterministic_policy,
+                    model_path=rl_model_path,
+                )
+            else:
+                obs, reward, terminated, truncated, info = env.step(action)
             
             # Osciloscopio
             angle_disp = obs[0] if len(obs) > 0 else 0.0
-            scope.add_sample(action[0], angle_disp)
+            scope.add_sample(info.get("rl_action", action[0]), angle_disp)
             
             # Render
             screen.fill((255,255,255))

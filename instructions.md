@@ -235,14 +235,24 @@ La seccion `experiments` define los modos a ejecutar y sus nombres de modelo:
 
 La seccion `wandb` permite registrar hiperparametros, modo, ruta del modelo y metricas disponibles. Para pruebas puede mantenerse con `enabled=false` o `mode=disabled`.
 
+Demo interactiva con politica RL:
+
+```bash
+.venv/bin/python gym_wrapper/test_pahm_ode_env.py \
+  --model pahm_model/pahm_fast_v2_best.pth \
+  --reset_angle 720 \
+  --config configs/stage3_config.json
+```
+
+La seccion `demo` permite seleccionar `rl_model_type` (`naive` o `robust`), rutas de modelos y `deterministic_policy`. Tambien se puede usar `--rl_model` para cargar una politica concreta.
+
 Para continuar con Etapa 3B falta:
 
 - entrenar formalmente agentes naive y robusto con corridas largas;
-- carga de politica entrenada en el modo `RL` de la demo;
 - comparacion cuantitativa de error de seguimiento, tiempo de estabilizacion y sobreimpulso.
 
 Estado verificado de la suite completa:
 
 ```text
-70 passed, 4 skipped, 16 warnings
+78 passed, 1 skipped, 16 warnings
 ```

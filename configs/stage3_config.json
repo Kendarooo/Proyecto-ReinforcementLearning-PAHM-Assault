@@ -59,6 +59,16 @@
       "model_name": "pahm_ppo_robust"
     }
   },
+  "demo": {
+    "control_mode": "rl",
+    "rl_model_type": "robust",
+    "models": {
+      "naive": "../artifacts/stage3/models/pahm_ppo_naive.zip",
+      "robust": "../artifacts/stage3/models/pahm_ppo_robust.zip"
+    },
+    "deterministic_policy": true,
+    "render": true
+  },
   "wandb": {
     "enabled": true,
     "project": "pahm-rl-stage3",

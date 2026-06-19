@@ -56,6 +56,11 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
   - integracion W&B desactivable para registrar hiperparametros, modo y ruta del modelo;
   - guardado final de modelo y callbacks de checkpoint configurables;
   - pruebas smoke en `tests/test_train_rl.py`, con skip controlado si `stable-baselines3` no esta instalado.
+- Integracion de politicas RL entrenadas en la demo visual:
+  - modulo `gym_wrapper/rl_policy.py` para cargar politica, predecir acciones y ejecutar un paso RL sin entrenamiento;
+  - seleccion de modelo `naive`/`robust` desde la seccion `demo` de configuracion;
+  - acoplamiento del modo `RL` en `gym_wrapper/test_pahm_ode_env.py`;
+  - pruebas con politica mock en `tests/test_rl_policy_demo.py`.
 
 ## Estrategias de prompting empleadas
 

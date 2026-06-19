@@ -143,17 +143,16 @@ Al desarrollar extensiones sobre este código base, se deben respetar las siguie
 
 ## 5. Integración del Agente de Aprendizaje por Refuerzo (RL)
 
-Para completar la Etapa 3 del proyecto, se ha dispuesto una sección explícita dentro del lazo de ejecución de `test_pahm_ode_env.py`:
+La demo interactiva (`gym_wrapper/test_pahm_ode_env.py`) puede cargar una política RL entrenada y usarla en el modo `RL` del panel:
 
-```python
-elif controller.current_mode == "RL":
-    # -----------------------------------------------------------
-    # POR HACER: Inserte aquí el acoplamiento de su modelo RL.
-    # Deben pasar la observación (obs) a su agente entrenado
-    # y asignar la acción calculada a la variable `rl_action`.
-    # -----------------------------------------------------------
-    rl_action = agente.predict(obs)
+```bash
+python gym_wrapper/test_pahm_ode_env.py \
+  --model pahm_model/pahm_fast_v2_best.pth \
+  --reset_angle 720 \
+  --config configs/stage3_config.json
 ```
+
+La sección `demo` permite elegir `rl_model_type` (`naive` o `robust`) y las rutas de modelos entrenados. También se puede pasar una ruta explícita con `--rl_model`.
 
 El script de entrenamiento RL vive en `train_rl.py` y opera en modo *headless* (sin renderizado gráfico). Lee `rl_training`, `experiments` y `wandb` desde `gym_wrapper/config.json`, permite modos `naive` y `robust`, y guarda modelos separados en la ruta configurada:
 
