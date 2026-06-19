@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from gymnasium.wrappers import TimeLimit
+
 from gym_wrapper.learned_pahm_ode import LearnedPAHMODE
 from pahm_stage3.wandb_logger import (
     DEFAULT_WANDB,
@@ -33,6 +35,7 @@ DEFAULT_RL_TRAINING = {
     "render": False,
     "model_path": "pahm_model/pahm_fast_v2_best.pth",
     "reset_angle_deg": 720,
+    "max_episode_steps": 500,
     "model_output_dir": "artifacts/stage3/models",
     "model_name": "pahm_ppo_naive",
     "checkpoint_freq": 5000,
@@ -112,7 +115,7 @@ def make_training_env(config: dict[str, Any]) -> LearnedPAHMODE:
         rl_config.get("randomize_wind_pattern", enable_wind)
     )
 
-    return LearnedPAHMODE(
+    base_env = LearnedPAHMODE(
         render_mode=None,
         model_path=str(model_path),
         reset_angle_deg=rl_config.get("reset_angle_deg", 720),
@@ -121,6 +124,10 @@ def make_training_env(config: dict[str, Any]) -> LearnedPAHMODE:
         wind_seed=rl_config.get("wind_seed"),
         randomize_wind_pattern=randomize_wind_pattern,
         config=config,
+    )
+    return TimeLimit(
+        base_env,
+        max_episode_steps=int(rl_config.get("max_episode_steps", 500)),
     )
 
 
@@ -196,19 +203,25 @@ def _build_callbacks(config: dict[str, Any]):
 
     wandb_run = config.get("_wandb_run")
     if wandb_run is not None and bool(config.get("wandb", {}).get("enabled", False)):
-        callbacks.append(_WandbMetricsCallback(wandb_run, BaseCallback))
+        callbacks.append(
+            _WandbMetricsCallback(
+                wandb_run,
+                BaseCallback,
+                mode=str(rl_config.get("mode")),
+            )
+        )
 
     if not callbacks:
         return None
     return CallbackList(callbacks)
 
 
-def _WandbMetricsCallback(wandb_run, base_callback_cls):
+def _WandbMetricsCallback(wandb_run, base_callback_cls, *, mode: str | None):
     class WandbMetricsCallback(base_callback_cls):
         def _on_step(self) -> bool:
             payload = {
                 "train/num_timesteps": self.num_timesteps,
-                "train/mode": config_mode,
+                "train/mode": mode,
                 "train/wind_enabled": self.training_env.get_attr("enable_wind")[0]
                 if self.training_env is not None
                 else None,
@@ -227,7 +240,6 @@ def _WandbMetricsCallback(wandb_run, base_callback_cls):
             log_training_metrics(wandb_run, payload, step=self.num_timesteps)
             return True
 
-    config_mode = getattr(wandb_run, "_stage3_mode", None)
     return WandbMetricsCallback()
 
 
@@ -239,7 +251,6 @@ def _start_wandb_run(config: dict[str, Any]):
         tags=[f"mode:{rl_config['mode']}"],
         job_type="train_rl",
     )
-    setattr(run, "_stage3_mode", rl_config["mode"])
     return run
 
 

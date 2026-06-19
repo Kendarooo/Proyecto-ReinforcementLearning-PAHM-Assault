@@ -2,12 +2,16 @@
   "control": {
     "theta_ref": 0.0,
     "theta_ref_min": -12.566370614359172,
-    "theta_ref_max": 12.566370614359172
+    "theta_ref_max": 12.566370614359172,
+    "error_integral_clip": 3.14159265358979
   },
   "reward": {
     "tracking_error_weight": 4.0,
-    "velocity_weight": 0.1,
-    "control_weight": 0.01
+    "integral_weight": 0.5,
+    "velocity_weight": 0.02,
+    "control_weight": 0.001,
+    "tracking_error_clip": 1.0,
+    "velocity_clip": 5.0
   },
   "wind": {
     "enabled": false,
@@ -19,7 +23,7 @@
       "turbulent"
     ],
     "default_pattern": "gust",
-    "max_torque": 20.0,
+    "max_torque": 5.0,
     "stochastic": true,
     "manual_gust_enabled": true,
     "manual_gust_torque": 5.0,
@@ -29,13 +33,18 @@
     "enabled": true,
     "reset_options": {
       "randomize": true
-    }
+    },
+    "theta_ref_randomize": true,
+    "theta_ref_min": 0.0,
+    "theta_ref_max": 0.7853981633974483,
+    "initial_angle_deg": 15.0,
+    "initial_velocity_abs": 0.25
   },
   "rl_training": {
     "enabled": true,
     "mode": "naive",
     "algorithm": "PPO",
-    "total_timesteps": 100000,
+    "total_timesteps": 1000000,
     "learning_rate": 0.0003,
     "gamma": 0.99,
     "n_steps": 2048,
@@ -43,9 +52,10 @@
     "device": "auto",
     "render": false,
     "model_path": "../pahm_model/pahm_fast_v2_best.pth",
-    "reset_angle_deg": 720,
+    "reset_angle_deg": 360,
+    "max_episode_steps": 500,
     "model_output_dir": "../artifacts/stage3/models",
-    "checkpoint_freq": 5000,
+    "checkpoint_freq": 50000,
     "log_dir": "../artifacts/stage3/logs"
   },
   "experiments": {
@@ -103,7 +113,7 @@
     "enabled": true,
     "project": "pahm-rl-stage3",
     "entity": null,
-    "mode": "disabled",
+    "mode": "online",
     "log_models": true,
     "log_evaluation": true,
     "tags": [
@@ -113,7 +123,7 @@
     ]
   },
   "wind_patterns": {
-    "max_wind_torque": 20.0,
+    "max_wind_torque": 5.0,
     "calm": {
       "phi_deg": 0.0,
       "noise_std": 0.02

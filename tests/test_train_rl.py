@@ -37,6 +37,7 @@ def _write_config(tmp_path: Path, *, mode: str = "naive", total_timesteps: int =
         "render": False,
         "model_path": str(MODEL_PATH),
         "reset_angle_deg": 720,
+        "max_episode_steps": 25,
         "model_output_dir": str(tmp_path / "models"),
         "model_name": f"pahm_ppo_{mode}",
         "checkpoint_freq": 0,
@@ -105,8 +106,8 @@ def test_make_training_env_is_headless_and_resets_with_randomize(tmp_path):
     try:
         obs, info = env.reset(options={"randomize": True})
 
-        assert env.render_mode is None
-        assert obs.shape == (3,)
+        assert env.unwrapped.render_mode is None
+        assert obs.shape == (4,)
         assert np.isfinite(obs).all()
         assert "theta_ref" in info
         assert info["wind_automatic"] is False
@@ -120,7 +121,7 @@ def test_naive_mode_disables_wind(tmp_path):
     try:
         _, info = env.reset(options={"randomize": True})
 
-        assert env.enable_wind is False
+        assert env.unwrapped.enable_wind is False
         assert info["wind_automatic"] is False
     finally:
         env.close()
@@ -132,7 +133,7 @@ def test_robust_mode_enables_wind(tmp_path):
     try:
         _, info = env.reset(options={"randomize": True})
 
-        assert env.enable_wind is True
+        assert env.unwrapped.enable_wind is True
         assert info["wind_automatic"] is True
     finally:
         env.close()
@@ -178,14 +179,24 @@ def test_wandb_mock_receives_saved_model_path(tmp_path, monkeypatch):
             self.files.append(str(path))
 
     class FakeWandbRun:
+        _allowed_attrs = {"logged_payloads"}
+
+        def __setattr__(self, name, value):
+            if name not in self._allowed_attrs:
+                raise Exception(f"Attribute {name} is not supported on Run object.")
+            super().__setattr__(name, value)
+
+        def __init__(self):
+            self.logged_payloads = logged_payloads
+
         def log(self, payload):
-            logged_payloads.append(payload)
+            self.logged_payloads.append(payload)
 
         def log_artifact(self, artifact):
             logged_artifacts.append(artifact)
 
         def finish(self):
-            logged_payloads.append({"finished": True})
+            self.logged_payloads.append({"finished": True})
 
     init_kwargs = {}
 
@@ -225,6 +236,22 @@ def test_training_env_step_does_not_call_render(tmp_path, monkeypatch):
     try:
         env.reset(options={"randomize": True})
         env.step(np.array([0.0]))
+    finally:
+        env.close()
+
+
+def test_training_env_has_time_limit_for_comparable_episode_returns(tmp_path):
+    config = load_config(_write_config(tmp_path, mode="naive"))
+    env = make_training_env(config)
+    try:
+        assert env._max_episode_steps == 25
+        env.reset(options={"initial_state": [0.0, 0.0], "theta_ref": 0.0})
+
+        truncated = False
+        for _ in range(25):
+            _, _, _, truncated, _ = env.step(np.array([0.0]))
+
+        assert truncated is True
     finally:
         env.close()
 

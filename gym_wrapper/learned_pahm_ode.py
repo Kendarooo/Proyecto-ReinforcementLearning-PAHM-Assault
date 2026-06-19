@@ -102,6 +102,24 @@ class LearnedPAHMODE(gym.Env):
         wind_settings = wrapper_config.get("wind", {})
         control_settings = wrapper_config.get("control", {})
         reward_settings = wrapper_config.get("reward", {})
+        domain_randomization_settings = wrapper_config.get("domain_randomization", {})
+        self.domain_randomization_enabled = bool(
+            domain_randomization_settings.get("enabled", False)
+        )
+        self.default_reset_options = (
+            dict(domain_randomization_settings.get("reset_options", {}))
+            if self.domain_randomization_enabled
+            else {}
+        )
+        self.random_initial_angle_deg = float(
+            domain_randomization_settings.get(
+                "initial_angle_deg",
+                self.reset_angle_deg * 0.5,
+            )
+        )
+        self.random_initial_velocity_abs = float(
+            domain_randomization_settings.get("initial_velocity_abs", 1.0)
+        )
         
         # Cargar Modelo ODE
         print(f"🔄 Cargando modelo ODE desde: {self.model_path}")
@@ -132,20 +150,44 @@ class LearnedPAHMODE(gym.Env):
             raise ValueError("control.theta_ref_min cannot exceed control.theta_ref_max")
 
         self.theta_ref = 0.0
+        self._theta_ref_fixed_by_constructor = theta_ref is not None
         configured_theta_ref = control_settings.get("theta_ref", 0.0)
         self.set_theta_ref(configured_theta_ref if theta_ref is None else theta_ref)
+        self.randomize_theta_ref = bool(
+            domain_randomization_settings.get("theta_ref_randomize", False)
+        )
+        self.random_theta_ref_min = float(
+            domain_randomization_settings.get("theta_ref_min", self.theta_ref_min)
+        )
+        self.random_theta_ref_max = float(
+            domain_randomization_settings.get("theta_ref_max", self.theta_ref_max)
+        )
+        if self.random_theta_ref_min > self.random_theta_ref_max:
+            raise ValueError("domain_randomization.theta_ref_min cannot exceed theta_ref_max")
+        if (
+            self.random_theta_ref_min < self.theta_ref_min
+            or self.random_theta_ref_max > self.theta_ref_max
+        ):
+            raise ValueError(
+                "domain_randomization theta_ref range must stay within control theta_ref bounds"
+            )
+        self.error_integral = 0.0
+        self.error_integral_clip = float(
+            control_settings.get("error_integral_clip", np.pi)
+        )
+
         self.reward_weights = self._build_reward_weights(
             reward_settings=reward_settings,
             overrides=reward_weights,
         )
 
-        # Observación: [ángulo, velocidad angular, ángulo objetivo]
+        # Observación: [ángulo, velocidad angular, ángulo objetivo, integral del error]
         low_obs = np.array(
-            [-self.limit_rad, -10.0, self.theta_ref_min],
+            [-self.limit_rad, -10.0, self.theta_ref_min, -self.error_integral_clip],
             dtype=np.float32,
         )
         high_obs = np.array(
-            [self.limit_rad, 10.0, self.theta_ref_max],
+            [self.limit_rad, 10.0, self.theta_ref_max, self.error_integral_clip],
             dtype=np.float32,
         )
         self.observation_space = spaces.Box(low=low_obs, high=high_obs, dtype=np.float32)
@@ -230,6 +272,12 @@ class LearnedPAHMODE(gym.Env):
                     reward_settings.get("error", 4.0),
                 )
             ),
+            "integral": float(
+                reward_settings.get(
+                    "integral_weight",
+                    reward_settings.get("integral", 0.0),
+                )
+            ),
             "velocity": float(
                 reward_settings.get(
                     "velocity_weight",
@@ -246,10 +294,17 @@ class LearnedPAHMODE(gym.Env):
         for key, value in (overrides or {}).items():
             normalized_key = {
                 "tracking_error_weight": "error",
+                "integral_weight": "integral",
                 "velocity_weight": "velocity",
                 "control_weight": "action",
             }.get(key, key)
             weights[normalized_key] = float(value)
+        self.reward_tracking_error_clip = reward_settings.get("tracking_error_clip")
+        if self.reward_tracking_error_clip is not None:
+            self.reward_tracking_error_clip = float(self.reward_tracking_error_clip)
+        self.reward_velocity_clip = reward_settings.get("velocity_clip")
+        if self.reward_velocity_clip is not None:
+            self.reward_velocity_clip = float(self.reward_velocity_clip)
         return weights
 
     def set_theta_ref(self, value: float) -> None:
@@ -266,7 +321,7 @@ class LearnedPAHMODE(gym.Env):
 
     def _get_obs(self) -> np.ndarray:
         return np.array(
-            [self.state[0], self.state[1], self.theta_ref],
+            [self.state[0], self.state[1], self.theta_ref, self.error_integral],
             dtype=np.float32,
         )
         
@@ -323,15 +378,50 @@ class LearnedPAHMODE(gym.Env):
             "theta_ref": float(self.theta_ref),
             "tracking_error": error,
             "abs_tracking_error": abs(error),
+            "error_integral": float(self.error_integral),
         }
 
     def _info(self) -> dict:
         return {**self._wind_info(), **self._tracking_info()}
 
+    def _maybe_randomize_theta_ref(self, options: dict) -> None:
+        if "theta_ref" in options:
+            self.set_theta_ref(options["theta_ref"])
+            return
+        if self._theta_ref_fixed_by_constructor and "theta_ref_randomize" not in options:
+            return
+        randomize_requested = bool(options.get("randomize", False))
+        theta_ref_randomize = bool(options.get("theta_ref_randomize", self.randomize_theta_ref))
+        if randomize_requested and theta_ref_randomize:
+            theta_ref = self.np_random.uniform(
+                low=self.random_theta_ref_min,
+                high=self.random_theta_ref_max,
+            )
+            self.set_theta_ref(theta_ref)
+
     def _tracking_reward(self, theta: float, theta_dot: float, action: float) -> float:
         error = float(theta - self.theta_ref)
+        if self.reward_tracking_error_clip is not None:
+            error = float(
+                np.clip(
+                    error,
+                    -self.reward_tracking_error_clip,
+                    self.reward_tracking_error_clip,
+                )
+            )
+        theta_dot = float(theta_dot)
+        if self.reward_velocity_clip is not None:
+            theta_dot = float(
+                np.clip(
+                    theta_dot,
+                    -self.reward_velocity_clip,
+                    self.reward_velocity_clip,
+                )
+            )
+        integral = float(self.error_integral)
         return -(
             self.reward_weights["error"] * float(error ** 2)
+            + self.reward_weights["integral"] * float(integral ** 2)
             + self.reward_weights["velocity"] * float(theta_dot ** 2)
             + self.reward_weights["action"] * float(action ** 2)
         )
@@ -368,6 +458,16 @@ class LearnedPAHMODE(gym.Env):
             
         # 3. Actualizar estado
         self.state = new_state
+
+        # Acumular integral del error (con anti-windup por clip)
+        inst_error = float(self.state[0]) - float(self.theta_ref)
+        self.error_integral = float(
+            np.clip(
+                self.error_integral + inst_error * self.dt,
+                -self.error_integral_clip,
+                self.error_integral_clip,
+            )
+        )
 
         # --- Ángulo SIN envolver (decisión de diseño deliberada; conservar) ---
         # theta se mantiene continuo y acumulativo = ángulo físico real.
@@ -424,21 +524,28 @@ class LearnedPAHMODE(gym.Env):
             tuple: (observación_inicial [theta, theta_dot, theta_ref], info_dict)
         """        
         super().reset(seed=seed)
-        
+
         self.last_action = None
-        
-        options = options or {}
-        if "theta_ref" in options:
-            self.set_theta_ref(options["theta_ref"])
+        self.error_integral = 0.0
+
+        if options is None:
+            options = dict(self.default_reset_options)
+        else:
+            options = {**self.default_reset_options, **options}
+        self._maybe_randomize_theta_ref(options)
 
         # 1. Forzar un estado inicial específico
         if "initial_state" in options:
             self.state = np.array(options["initial_state"], dtype=np.float32)
         # 2. Inicialización aleatoria (Domain Randomization)
         elif options.get("randomize", False):
-            max_angle = np.deg2rad(self.reset_angle_deg * 0.5)
+            max_angle_deg = float(options.get("initial_angle_deg", self.random_initial_angle_deg))
+            max_angle = np.deg2rad(max_angle_deg)
+            max_velocity = float(
+                options.get("initial_velocity_abs", self.random_initial_velocity_abs)
+            )
             rand_angle = self.np_random.uniform(low=-max_angle, high=max_angle)
-            rand_vel = self.np_random.uniform(low=-1.0, high=1.0)
+            rand_vel = self.np_random.uniform(low=-max_velocity, high=max_velocity)
             self.state = np.array([rand_angle, rand_vel], dtype=np.float32)
         # 3. Comportamiento por defecto (reposo absoluto)
         else:

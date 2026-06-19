@@ -92,9 +92,9 @@ def test_headless_env_with_automatic_wind_returns_valid_info():
         obs, reset_info = env.reset(seed=7, options={"randomize": True})
         next_obs, reward, terminated, truncated, info = env.step(np.array([0.2]))
 
-        assert env.observation_space.shape == (3,)
-        assert obs.shape == (3,)
-        assert next_obs.shape == (3,)
+        assert env.observation_space.shape == (4,)
+        assert obs.shape == (4,)
+        assert next_obs.shape == (4,)
         assert np.isclose(obs[2], 1.0)
         assert np.isclose(next_obs[2], 1.0)
         assert np.isfinite(reward)
@@ -176,7 +176,7 @@ def test_theta_ref_is_loaded_from_external_config():
         assert np.isclose(env.theta_ref, 0.35)
         assert np.isclose(obs[2], 0.35)
         assert np.isclose(info["theta_ref"], 0.35)
-        assert env.observation_space.shape == (3,)
+        assert env.observation_space.shape == (4,)
         assert np.isclose(env.observation_space.low[2], -1.0)
         assert np.isclose(env.observation_space.high[2], 1.0)
     finally:
@@ -192,7 +192,7 @@ def test_reward_weights_are_loaded_from_external_config():
         config=config,
     )
     try:
-        assert env.reward_weights == {"error": 2.5, "velocity": 0.2, "action": 0.03}
+        assert env.reward_weights == {"error": 2.5, "integral": 0.0, "velocity": 0.2, "action": 0.03}
     finally:
         env.close()
 
@@ -217,6 +217,30 @@ def test_reward_is_better_when_state_is_closer_to_configured_theta_ref():
         far_reward = env._tracking_reward(theta=-0.5, theta_dot=0.0, action=0.0)
 
         assert close_reward > far_reward
+    finally:
+        env.close()
+
+
+def test_tracking_reward_can_clip_large_errors_for_stable_rl_training():
+    config = _wrapper_config_with_wind(enabled=False)
+    config["control"]["theta_ref"] = 0.0
+    config["reward"] = {
+        "tracking_error_weight": 2.0,
+        "velocity_weight": 0.02,
+        "control_weight": 0.001,
+        "tracking_error_clip": 1.0,
+        "velocity_clip": 5.0,
+    }
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=360,
+        config=config,
+    )
+    try:
+        reward = env._tracking_reward(theta=10.0, theta_dot=100.0, action=1.0)
+
+        assert np.isclose(reward, -(2.0 + 0.5 + 0.001))
     finally:
         env.close()
 
@@ -340,7 +364,7 @@ def test_reset_randomize_with_theta_ref_keeps_valid_observation():
     try:
         obs, info = env.reset(seed=3, options={"randomize": True})
 
-        assert obs.shape == (3,)
+        assert obs.shape == (4,)
         assert np.isfinite(obs).all()
         assert np.isclose(obs[2], 0.5)
         assert np.isclose(info["theta_ref"], 0.5)
@@ -357,10 +381,77 @@ def test_reset_options_can_override_theta_ref_for_episode():
             options={"randomize": True, "theta_ref": 1.0},
         )
 
-        assert obs.shape == (3,)
+        assert obs.shape == (4,)
         assert np.isfinite(obs).all()
         assert np.isclose(obs[2], 1.0)
         assert np.isclose(info["theta_ref"], 1.0)
         assert info["wind_automatic"] is True
+    finally:
+        env.close()
+
+
+def test_reset_randomize_can_sample_theta_ref_from_domain_randomization_config():
+    config = _wrapper_config_with_wind(enabled=False)
+    config["control"]["theta_ref"] = 0.0
+    config["control"]["theta_ref_min"] = -2.0
+    config["control"]["theta_ref_max"] = 2.0
+    config["domain_randomization"] = {
+        "enabled": True,
+        "reset_options": {"randomize": True},
+        "theta_ref_randomize": True,
+        "theta_ref_min": 0.25,
+        "theta_ref_max": 0.75,
+    }
+    env = _make_env(enable_wind=False, config=config)
+    try:
+        obs_a, info_a = env.reset(seed=11, options={"randomize": True})
+        obs_b, info_b = env.reset(seed=12, options={"randomize": True})
+
+        assert 0.25 <= info_a["theta_ref"] <= 0.75
+        assert 0.25 <= info_b["theta_ref"] <= 0.75
+        assert np.isclose(obs_a[2], info_a["theta_ref"])
+        assert np.isclose(obs_b[2], info_b["theta_ref"])
+        assert not np.isclose(info_a["theta_ref"], info_b["theta_ref"])
+    finally:
+        env.close()
+
+
+def test_reset_without_options_uses_configured_domain_randomization_defaults():
+    config = _wrapper_config_with_wind(enabled=False)
+    config["control"]["theta_ref"] = 0.0
+    config["control"]["theta_ref_min"] = -2.0
+    config["control"]["theta_ref_max"] = 2.0
+    config["domain_randomization"] = {
+        "enabled": True,
+        "reset_options": {"randomize": True},
+        "theta_ref_randomize": True,
+        "theta_ref_min": 0.25,
+        "theta_ref_max": 0.75,
+    }
+    env = _make_env(enable_wind=False, config=config)
+    try:
+        obs, info = env.reset(seed=21)
+
+        assert 0.25 <= info["theta_ref"] <= 0.75
+        assert np.isclose(obs[2], info["theta_ref"])
+        assert not np.allclose(obs[:2], np.array([0.0, 0.0], dtype=np.float32))
+    finally:
+        env.close()
+
+
+def test_randomized_initial_state_uses_configured_training_bounds():
+    config = _wrapper_config_with_wind(enabled=False)
+    config["domain_randomization"] = {
+        "enabled": True,
+        "reset_options": {"randomize": True},
+        "initial_angle_deg": 15.0,
+        "initial_velocity_abs": 0.2,
+    }
+    env = _make_env(enable_wind=False, config=config)
+    try:
+        obs, _ = env.reset(seed=22)
+
+        assert abs(obs[0]) <= np.deg2rad(15.0)
+        assert abs(obs[1]) <= 0.2
     finally:
         env.close()
