@@ -35,7 +35,7 @@
     "enabled": true,
     "mode": "naive",
     "algorithm": "PPO",
-    "total_timesteps": 100,
+    "total_timesteps": 100000,
     "learning_rate": 0.0003,
     "gamma": 0.99,
     "n_steps": 2048,
