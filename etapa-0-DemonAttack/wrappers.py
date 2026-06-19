@@ -13,9 +13,17 @@ try:
 except ImportError:
     ale_py = None
 else:
-    from ale_py.registration import register_v5_envs
-
-    register_v5_envs()
+    try:
+        gym.register_envs(ale_py)
+    except Exception:
+        pass
+    if "ALE/DemonAttack-v5" not in gym.registry:
+        try:
+            from ale_py.registration import register_v5_envs
+        except ImportError:
+            pass
+        else:
+            register_v5_envs()
 
 
 class ResizeRGB(gym.ObservationWrapper):

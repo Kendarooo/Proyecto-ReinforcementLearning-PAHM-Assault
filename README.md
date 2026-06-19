@@ -155,10 +155,11 @@ elif controller.current_mode == "RL":
     rl_action = agente.predict(obs)
 ```
 
-El script de entrenamiento RL vive en `train_rl.py` y opera en modo *headless* (sin renderizado gráfico). Lee `rl_training` desde `gym_wrapper/config.json`, permite modos `naive` y `robust`, y guarda el modelo final en la ruta configurada:
+El script de entrenamiento RL vive en `train_rl.py` y opera en modo *headless* (sin renderizado gráfico). Lee `rl_training`, `experiments` y `wandb` desde `gym_wrapper/config.json`, permite modos `naive` y `robust`, y guarda modelos separados en la ruta configurada:
 
 ```bash
 python train_rl.py --config gym_wrapper/config.json
+python train_rl.py --config gym_wrapper/config.json --mode all
 ```
 
 El entorno ya acepta `theta_ref` por configuracion, constructor, `set_theta_ref(value)` o `reset(options={"theta_ref": value})`, y reporta `theta_ref`, `tracking_error` y `abs_tracking_error` en `info`.

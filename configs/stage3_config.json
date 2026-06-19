@@ -1,0 +1,100 @@
+{
+  "control": {
+    "theta_ref": 0.0,
+    "theta_ref_min": -12.566370614359172,
+    "theta_ref_max": 12.566370614359172
+  },
+  "reward": {
+    "tracking_error_weight": 4.0,
+    "velocity_weight": 0.1,
+    "control_weight": 0.01
+  },
+  "wind": {
+    "enabled": false,
+    "source": "wind_process",
+    "patterns": [
+      "calm",
+      "gust",
+      "sustained",
+      "turbulent"
+    ],
+    "default_pattern": "gust",
+    "max_torque": 20.0,
+    "stochastic": true
+  },
+  "domain_randomization": {
+    "enabled": true,
+    "reset_options": {
+      "randomize": true
+    }
+  },
+  "rl_training": {
+    "enabled": true,
+    "mode": "naive",
+    "algorithm": "PPO",
+    "total_timesteps": 100,
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "n_steps": 2048,
+    "batch_size": 64,
+    "device": "auto",
+    "render": false,
+    "model_path": "../pahm_model/pahm_fast_v2_best.pth",
+    "reset_angle_deg": 720,
+    "model_output_dir": "../artifacts/stage3/models",
+    "checkpoint_freq": 5000,
+    "log_dir": "../artifacts/stage3/logs"
+  },
+  "experiments": {
+    "modes": [
+      "naive",
+      "robust"
+    ],
+    "naive": {
+      "wind_enabled": false,
+      "model_name": "pahm_ppo_naive"
+    },
+    "robust": {
+      "wind_enabled": true,
+      "model_name": "pahm_ppo_robust"
+    }
+  },
+  "wandb": {
+    "enabled": true,
+    "project": "pahm-rl-stage3",
+    "entity": null,
+    "mode": "disabled",
+    "tags": [
+      "stage3",
+      "rl",
+      "pahm"
+    ]
+  },
+  "wind_patterns": {
+    "max_wind_torque": 20.0,
+    "calm": {
+      "phi_deg": 0.0,
+      "noise_std": 0.02
+    },
+    "gust": {
+      "phi_deg": 0.0,
+      "trigger_min_s": 1.0,
+      "trigger_max_s": 4.0,
+      "duration_s": 1.5,
+      "peak_mag": 0.7
+    },
+    "sustained": {
+      "phi_deg": 0.0,
+      "onset_min_s": 0.5,
+      "onset_max_s": 2.0,
+      "level": 0.4
+    },
+    "turbulent": {
+      "phi_deg": 0.0,
+      "freq_hz": 0.8,
+      "amp": 0.25,
+      "bias": 0.3,
+      "noise_std": 0.05
+    }
+  }
+}

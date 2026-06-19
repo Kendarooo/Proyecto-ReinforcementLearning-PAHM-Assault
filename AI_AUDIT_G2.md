@@ -50,8 +50,10 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
 - Implementacion de `train_rl.py` como entrada headless independiente para entrenamiento con Stable Baselines3:
   - carga de `rl_training` desde configuracion externa;
   - modos `naive` y `robust` para desactivar/activar perturbaciones;
+  - orquestacion de `train_all_modes(config_path)` para entrenar los modos declarados en `experiments.modes`;
   - construccion de entorno con `render_mode=None`;
   - seleccion configurable de algoritmo (`PPO`, `A2C`, `SAC`);
+  - integracion W&B desactivable para registrar hiperparametros, modo y ruta del modelo;
   - guardado final de modelo y callbacks de checkpoint configurables;
   - pruebas smoke en `tests/test_train_rl.py`, con skip controlado si `stable-baselines3` no esta instalado.
 

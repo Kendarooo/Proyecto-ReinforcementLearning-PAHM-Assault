@@ -217,6 +217,7 @@ Entrenamiento RL headless:
 
 ```bash
 .venv/bin/python train_rl.py --config gym_wrapper/config.json
+.venv/bin/python train_rl.py --config gym_wrapper/config.json --mode all
 ```
 
 La seccion `rl_training` de `gym_wrapper/config.json` controla:
@@ -224,7 +225,15 @@ La seccion `rl_training` de `gym_wrapper/config.json` controla:
 - `mode`: `naive` desactiva viento; `robust` activa perturbaciones.
 - `algorithm`: `PPO`, `A2C` o `SAC`.
 - `total_timesteps`, `learning_rate`, `gamma`, `n_steps`, `batch_size`.
-- `model_output_dir`, `model_name`, `checkpoint_freq` y `log_dir`.
+- `model_output_dir`, `checkpoint_freq` y `log_dir`.
+
+La seccion `experiments` define los modos a ejecutar y sus nombres de modelo:
+
+- `experiments.modes`: lista de modos, por ejemplo `["naive", "robust"]`.
+- `experiments.naive.model_name`: `pahm_ppo_naive`.
+- `experiments.robust.model_name`: `pahm_ppo_robust`.
+
+La seccion `wandb` permite registrar hiperparametros, modo, ruta del modelo y metricas disponibles. Para pruebas puede mantenerse con `enabled=false` o `mode=disabled`.
 
 Para continuar con Etapa 3B falta:
 
@@ -235,5 +244,5 @@ Para continuar con Etapa 3B falta:
 Estado verificado de la suite completa:
 
 ```text
-66 passed, 3 skipped, 16 warnings
+70 passed, 4 skipped, 16 warnings
 ```

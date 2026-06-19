@@ -1,13 +1,21 @@
 import copy
 import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from gym_wrapper.learned_pahm_ode import _load_wrapper_config
 
-from train_rl import build_agent, load_config, make_training_env, train_from_config
+from train_rl import (
+    build_agent,
+    load_config,
+    make_training_env,
+    train_all_modes,
+    train_from_config,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -34,9 +42,43 @@ def _write_config(tmp_path: Path, *, mode: str = "naive", total_timesteps: int =
         "checkpoint_freq": 0,
         "log_dir": str(tmp_path / "logs"),
     }
+    config["experiments"] = {
+        "modes": ["naive", "robust"],
+        "naive": {
+            "wind_enabled": False,
+            "model_name": "pahm_ppo_naive",
+        },
+        "robust": {
+            "wind_enabled": True,
+            "model_name": "pahm_ppo_robust",
+        },
+    }
+    config["wandb"] = {
+        "enabled": False,
+        "project": "pahm-rl-stage3",
+        "entity": None,
+        "mode": "disabled",
+        "tags": ["stage3", "rl", "pahm"],
+    }
     path = tmp_path / f"{mode}_config.json"
     path.write_text(json.dumps(config), encoding="utf-8")
     return path
+
+
+class FakeAgent:
+    def __init__(self):
+        self.learn_calls = []
+        self.saved_paths = []
+
+    def learn(self, total_timesteps: int, callback=None):
+        self.learn_calls.append((total_timesteps, callback))
+        return self
+
+    def save(self, path: str):
+        model_path = Path(path).with_suffix(".zip")
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        model_path.write_text("fake model", encoding="utf-8")
+        self.saved_paths.append(model_path)
 
 
 def test_rl_training_config_loads_from_external_file(tmp_path):
@@ -47,6 +89,14 @@ def test_rl_training_config_loads_from_external_file(tmp_path):
     assert config["rl_training"]["mode"] == "naive"
     assert config["rl_training"]["algorithm"] == "PPO"
     assert config["rl_training"]["render"] is False
+
+
+def test_config_defines_naive_and_robust_experiment_modes(tmp_path):
+    config = load_config(_write_config(tmp_path, mode="naive"))
+
+    assert config["experiments"]["modes"] == ["naive", "robust"]
+    assert config["experiments"]["naive"]["wind_enabled"] is False
+    assert config["experiments"]["robust"]["wind_enabled"] is True
 
 
 def test_make_training_env_is_headless_and_resets_with_randomize(tmp_path):
@@ -88,6 +138,59 @@ def test_robust_mode_enables_wind(tmp_path):
         env.close()
 
 
+def test_train_from_config_accepts_mode_override_and_saves_named_model(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr("train_rl.build_agent", lambda *args, **kwargs: FakeAgent())
+    config_path = _write_config(tmp_path, mode="naive", total_timesteps=1)
+
+    model_path = Path(train_from_config(config_path, mode="robust"))
+
+    assert model_path.exists()
+    assert model_path.name == "pahm_ppo_robust.zip"
+
+
+def test_train_all_modes_saves_one_model_per_configured_mode(tmp_path, monkeypatch):
+    monkeypatch.setattr("train_rl.build_agent", lambda *args, **kwargs: FakeAgent())
+    config_path = _write_config(tmp_path, mode="naive", total_timesteps=1)
+
+    model_paths = train_all_modes(config_path)
+
+    assert set(model_paths) == {"naive", "robust"}
+    assert Path(model_paths["naive"]).name == "pahm_ppo_naive.zip"
+    assert Path(model_paths["robust"]).name == "pahm_ppo_robust.zip"
+    assert Path(model_paths["naive"]).exists()
+    assert Path(model_paths["robust"]).exists()
+
+
+def test_wandb_mock_receives_saved_model_path(tmp_path, monkeypatch):
+    logged_payloads = []
+
+    class FakeWandbRun:
+        def log(self, payload):
+            logged_payloads.append(payload)
+
+        def finish(self):
+            logged_payloads.append({"finished": True})
+
+    fake_wandb = SimpleNamespace(init=lambda **kwargs: FakeWandbRun())
+    monkeypatch.setitem(sys.modules, "wandb", fake_wandb)
+    monkeypatch.setattr("train_rl.build_agent", lambda *args, **kwargs: FakeAgent())
+
+    config_path = _write_config(tmp_path, mode="naive", total_timesteps=1)
+    raw_config = json.loads(config_path.read_text(encoding="utf-8"))
+    raw_config["wandb"]["enabled"] = True
+    raw_config["wandb"]["mode"] = "disabled"
+    config_path.write_text(json.dumps(raw_config), encoding="utf-8")
+
+    model_path = train_from_config(config_path, mode="naive")
+
+    assert Path(model_path).exists()
+    assert any(payload.get("model/path") == model_path for payload in logged_payloads)
+    assert {"finished": True} in logged_payloads
+
+
 def test_training_env_step_does_not_call_render(tmp_path, monkeypatch):
     config = load_config(_write_config(tmp_path, mode="naive"))
 
@@ -123,3 +226,13 @@ def test_short_training_saves_model_when_sb3_is_available(tmp_path):
 
     assert model_path.exists()
     assert model_path.name == "pahm_ppo_naive.zip"
+
+
+def test_short_robust_training_saves_model_when_sb3_is_available(tmp_path):
+    pytest.importorskip("stable_baselines3")
+    config_path = _write_config(tmp_path, mode="robust", total_timesteps=10)
+
+    model_path = Path(train_from_config(config_path, mode="robust"))
+
+    assert model_path.exists()
+    assert model_path.name == "pahm_ppo_robust.zip"
