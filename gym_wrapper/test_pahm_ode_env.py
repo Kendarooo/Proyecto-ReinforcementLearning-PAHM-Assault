@@ -5,12 +5,10 @@
 # Proyecto 2
 # Versión: 1.6.0
 
-import gymnasium as gym
 from gymnasium.wrappers import TimeLimit
 from learned_pahm_ode import LearnedPAHMODE
 import numpy as np
 import pygame
-import sys
 import signal
 import argparse
 from pahm_ui import PAHMController, Oscilloscope, CONFIG
@@ -88,13 +86,15 @@ def main():
             mouse_pos = pygame.mouse.get_pos()
             
             for event in pygame.event.get():
-                if event.type == pygame.QUIT: running = False
+                if event.type == pygame.QUIT:
+                    running = False
                 controller.handle_event(event)
 
             controller.update(mouse_pos)
 
             # --- Resolución del viento: Manual (polar) vs patrón (WindProcess) ---
             active, man_mag, man_angle = controller.wind_state
+            base_env.set_theta_ref(controller.setpoint_rad)
             mode = controller.wind_pattern_mode
             if active and mode != "Manu":
                 # set_pattern SOLO al cambiar de patrón (si no, resetea t=0 cada frame)
@@ -153,7 +153,8 @@ def main():
             
             if terminated or truncated:
                 env.reset()
-                if pid_controller: pid_controller.reset()
+                if pid_controller:
+                    pid_controller.reset()
                 
     except Exception as e:
         print(f"💥 Error en runtime: {e}")

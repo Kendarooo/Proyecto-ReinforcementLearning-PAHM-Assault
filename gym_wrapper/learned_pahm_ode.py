@@ -64,7 +64,7 @@ class LearnedPAHMODE(gym.Env):
      
     
     Observación:
-        [theta_radians, theta_dot_rad]
+        [theta_radians, theta_dot_rad, theta_ref_rad]
 
         
     Acción:
@@ -86,7 +86,9 @@ class LearnedPAHMODE(gym.Env):
                  wind_pattern: str = "gust",
                  wind_config: dict | None = None,
                  wind_seed: int | None = None,
-                 randomize_wind_pattern: bool = False):
+                 randomize_wind_pattern: bool = False,
+                 theta_ref: float = 0.0,
+                 reward_weights: dict | None = None):
                  # Escala física del torque de viento): # 50Hz por defecto
         
         self.model_path = model_path
@@ -118,8 +120,14 @@ class LearnedPAHMODE(gym.Env):
         # Espacios de Gym
         self.action_space = spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
 
-        # Observación: [Ángulo en radianes, Velocidad angular en rad/s]
-        high_obs = np.array([np.deg2rad(180.0), 10.0], dtype=np.float32)
+        self.limit_rad = float(np.deg2rad(self.reset_angle_deg))
+        self.theta_ref = 0.0
+        self.set_theta_ref(theta_ref)
+        default_reward_weights = {"error": 4.0, "velocity": 0.1, "action": 0.01}
+        self.reward_weights = {**default_reward_weights, **(reward_weights or {})}
+
+        # Observación: [ángulo, velocidad angular, ángulo objetivo]
+        high_obs = np.array([self.limit_rad, 10.0, self.limit_rad], dtype=np.float32)
         self.observation_space = spaces.Box(low=-high_obs, high=high_obs, dtype=np.float32)
 
         # Estado visual
@@ -166,6 +174,24 @@ class LearnedPAHMODE(gym.Env):
         self.wind_active = active
         self.wind_mag = mag
         self.wind_angle = angle
+
+    def set_theta_ref(self, value: float) -> None:
+        """Actualiza el ángulo objetivo usado por la observación y recompensa."""
+        theta_ref = float(value)
+        if not np.isfinite(theta_ref):
+            raise ValueError("theta_ref must be finite")
+        limit_rad = float(np.deg2rad(self.reset_angle_deg))
+        if abs(theta_ref) > limit_rad:
+            raise ValueError(
+                f"theta_ref={theta_ref} exceeds environment limit +/-{limit_rad}"
+            )
+        self.theta_ref = theta_ref
+
+    def _get_obs(self) -> np.ndarray:
+        return np.array(
+            [self.state[0], self.state[1], self.theta_ref],
+            dtype=np.float32,
+        )
         
     def _sample_wind_pattern(self) -> str:
         if self.randomize_wind_pattern:
@@ -206,6 +232,17 @@ class LearnedPAHMODE(gym.Env):
             "configured_wind_pattern": self.configured_wind_pattern,
             "wind_automatic": bool(self.enable_wind),
         }
+
+    def _tracking_info(self) -> dict:
+        error = float(self.theta_ref - self.state[0])
+        return {
+            "theta_ref": float(self.theta_ref),
+            "tracking_error": error,
+            "abs_tracking_error": abs(error),
+        }
+
+    def _info(self) -> dict:
+        return {**self._wind_info(), **self._tracking_info()}
 
     def step(self, action):
         self.last_action = action
@@ -255,18 +292,21 @@ class LearnedPAHMODE(gym.Env):
         vel_rad_s = self.state[1]
 
         # 5. Recompensa y Terminación
-        limit_rad = np.deg2rad(self.reset_angle_deg)
-        terminated = bool(abs(angle_rad) > limit_rad)
+        terminated = bool(abs(angle_rad) > self.limit_rad)
         
-        # Recompensa simple: mantenerlo vertical (0) y quieto
-        reward = 2.0 * np.exp(-abs(angle_rad)) - 0.1 * abs(vel_rad_s) - 1.0
+        error = self.theta_ref - angle_rad
+        reward = -(
+            self.reward_weights["error"] * float(error ** 2)
+            + self.reward_weights["velocity"] * float(vel_rad_s ** 2)
+            + self.reward_weights["action"] * float(u_val ** 2)
+        )
         
-        obs = np.array([angle_rad,vel_rad_s], dtype=np.float32)
+        obs = self._get_obs()
         
         if self.render_mode == "human":
             self.render()
 
-        return obs, reward, terminated, False, self._wind_info()
+        return obs, reward, terminated, False, self._info()
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         """
@@ -287,15 +327,18 @@ class LearnedPAHMODE(gym.Env):
                 * "randomize" (bool): Si es True, activa Domain Randomization. Muestrea 
                   un ángulo seguro (no terminal, < 50% del límite físico) y una velocidad 
                   inicial no nula para maximizar la exploración del espacio de estados.
+                * "theta_ref" (float): Ángulo objetivo opcional para este episodio.
 
         Returns:
-            tuple: (observación_inicial [theta, theta_dot], info_dict)
+            tuple: (observación_inicial [theta, theta_dot, theta_ref], info_dict)
         """        
         super().reset(seed=seed)
         
         self.last_action = None
         
         options = options or {}
+        if "theta_ref" in options:
+            self.set_theta_ref(options["theta_ref"])
 
         # 1. Forzar un estado inicial específico
         if "initial_state" in options:
@@ -311,10 +354,11 @@ class LearnedPAHMODE(gym.Env):
             self.state = np.array([0.0, 0.0], dtype=np.float32)
         
         self._reset_wind_process()
-        return np.array([self.state[0], self.state[1]], dtype=np.float32), self._wind_info()        
+        return self._get_obs(), self._info()        
 
     def render(self):
-        if self.render_mode is None: return
+        if self.render_mode is None:
+            return
         pygame, gfxdraw = _require_pygame()
 
         if self.screen is None:
@@ -360,8 +404,13 @@ class LearnedPAHMODE(gym.Env):
         # Obtener ángulo real en radianes para dibujar
         theta = self.state[0]
 
-        l, r, t, b = 0, rod_length, rod_width / 2, -rod_width / 2
-        coords = [(l, b), (l, t), (r, t), (r, b)]
+        left, right, top, bottom = 0, rod_length, rod_width / 2, -rod_width / 2
+        coords = [
+            (left, bottom),
+            (left, top),
+            (right, top),
+            (right, bottom),
+        ]
         transformed_coords = []
         for c in coords:
             c = pygame.math.Vector2(c).rotate_rad(theta - np.pi / 2)

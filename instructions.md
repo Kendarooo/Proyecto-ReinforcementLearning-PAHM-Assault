@@ -97,10 +97,17 @@ env = LearnedPAHMODE(
     enable_wind=True,
     wind_pattern="gust",
     wind_seed=42,
+    theta_ref=1.0,
 )
 
 obs, info = env.reset(seed=123, options={"randomize": True})
 obs, reward, terminated, truncated, info = env.step([0.2])
+```
+
+La observacion del entorno para Etapa 3 es:
+
+```text
+[theta, theta_dot, theta_ref]
 ```
 
 Campos utiles en `info`:
@@ -112,11 +119,15 @@ Campos utiles en `info`:
 - `wind_pattern`: patron activo del episodio.
 - `configured_wind_pattern`: patron configurado en el constructor.
 - `wind_automatic`: indica si manda `WindProcess`.
+- `theta_ref`: angulo objetivo actual.
+- `tracking_error`: `theta_ref - theta`.
+- `abs_tracking_error`: valor absoluto del error de seguimiento.
 
 Reglas importantes:
 
 - `render_mode=None` no requiere Pygame durante el import ni durante entrenamiento headless.
 - `enable_wind=True` da prioridad a `WindProcess`; `set_wind()` queda para demo/manual cuando `enable_wind=False`.
+- `theta_ref` se puede configurar por constructor, por `set_theta_ref(value)` o por `reset(options={"theta_ref": value})`.
 - `wind_seed` controla el RNG interno de `WindProcess`.
 - `reset(seed=...)` controla el RNG del entorno Gymnasium, incluyendo estado inicial y seleccion de patron cuando `randomize_wind_pattern=True`.
 
@@ -129,7 +140,7 @@ Tests especificos de este branch:
 Estado verificado:
 
 ```text
-5 passed, 1 warning
+9 passed, 1 warning
 ```
 
 ## 5. Etapa 1: exportar tau_w
@@ -174,13 +185,17 @@ Entrenar GMM desde un manifiesto de `tau_w`:
 
 ## 7. Estado para Etapa 3
 
-Etapa 1, Etapa 2 y el primer bloque de Etapa 3 para entorno con perturbaciones pasan las pruebas actuales. Para continuar con Etapa 3A y Etapa 3B falta implementar:
+Etapa 1, Etapa 2 y los primeros bloques de Etapa 3 para entorno con perturbaciones, `theta_ref` configurable y recompensa de seguimiento pasan las pruebas actuales. Para continuar con Etapa 3B falta implementar:
 
-- observacion con `theta_ref` configurable;
-- recompensa de seguimiento respecto a `theta_ref`;
 - `train_rl.py` headless con Stable Baselines3;
 - agentes naive y robusto;
 - carga de politica entrenada en el modo `RL` de la demo;
 - comparacion cuantitativa de error de seguimiento, tiempo de estabilizacion y sobreimpulso.
+
+Estado verificado de la suite completa:
+
+```text
+42 passed, 1 warning
+```
 
 Antes de entregar, limpiar `requirements.txt`: actualmente contiene marcadores de conflicto Git.

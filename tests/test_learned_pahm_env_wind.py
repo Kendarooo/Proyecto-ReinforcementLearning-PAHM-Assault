@@ -22,21 +22,33 @@ def _make_env(**kwargs) -> LearnedPAHMODE:
 
 
 def test_headless_env_with_automatic_wind_returns_valid_info():
-    env = _make_env(enable_wind=True, wind_pattern="turbulent", wind_seed=42)
+    env = _make_env(
+        enable_wind=True,
+        wind_pattern="turbulent",
+        wind_seed=42,
+        theta_ref=1.0,
+    )
     try:
         obs, reset_info = env.reset(seed=7, options={"randomize": True})
         next_obs, reward, terminated, truncated, info = env.step(np.array([0.2]))
 
-        assert obs.shape == (2,)
-        assert next_obs.shape == (2,)
+        assert env.observation_space.shape == (3,)
+        assert obs.shape == (3,)
+        assert next_obs.shape == (3,)
+        assert np.isclose(obs[2], 1.0)
+        assert np.isclose(next_obs[2], 1.0)
         assert np.isfinite(reward)
         assert isinstance(terminated, bool)
         assert truncated is False
         assert reset_info["wind_automatic"] is True
+        assert reset_info["theta_ref"] == 1.0
         assert info["wind_automatic"] is True
         assert info["wind_active"] is True
         assert info["wind_pattern"] == "turbulent"
         assert info["configured_wind_pattern"] == "turbulent"
+        assert info["theta_ref"] == 1.0
+        assert np.isfinite(info["tracking_error"])
+        assert np.isfinite(info["abs_tracking_error"])
         assert env.configured_wind_pattern == "turbulent"
         assert env.active_wind_pattern == "turbulent"
         assert 0.0 <= info["wind_mag"] <= 1.0
@@ -123,3 +135,68 @@ def test_reset_seed_controls_randomized_wind_pattern_choice():
     finally:
         env_a.close()
         env_b.close()
+
+
+def test_set_theta_ref_updates_observation_and_info():
+    env = _make_env(enable_wind=False, theta_ref=0.25)
+    try:
+        obs, info = env.reset(seed=1, options={"initial_state": [0.0, 0.0]})
+        assert np.isclose(obs[2], 0.25)
+        assert np.isclose(info["theta_ref"], 0.25)
+
+        env.set_theta_ref(0.75)
+        obs, _, _, _, info = env.step(np.array([0.0]))
+
+        assert np.isclose(obs[2], 0.75)
+        assert np.isclose(info["theta_ref"], 0.75)
+        assert np.isclose(info["tracking_error"], 0.75 - obs[0])
+        assert np.isclose(info["abs_tracking_error"], abs(0.75 - obs[0]))
+    finally:
+        env.close()
+
+
+def test_changing_theta_ref_changes_tracking_reward():
+    env = _make_env(enable_wind=False)
+    try:
+        env.reset(seed=2, options={"initial_state": [0.0, 0.0]})
+        env.set_theta_ref(0.0)
+        _, reward_at_zero_ref, _, _, _ = env.step(np.array([0.0]))
+
+        env.reset(seed=2, options={"initial_state": [0.0, 0.0]})
+        env.set_theta_ref(1.0)
+        _, reward_at_one_ref, _, _, _ = env.step(np.array([0.0]))
+
+        assert reward_at_one_ref < reward_at_zero_ref
+    finally:
+        env.close()
+
+
+def test_reset_randomize_with_theta_ref_keeps_valid_observation():
+    env = _make_env(enable_wind=False, theta_ref=0.5)
+    try:
+        obs, info = env.reset(seed=3, options={"randomize": True})
+
+        assert obs.shape == (3,)
+        assert np.isfinite(obs).all()
+        assert np.isclose(obs[2], 0.5)
+        assert np.isclose(info["theta_ref"], 0.5)
+        assert env.observation_space.contains(obs)
+    finally:
+        env.close()
+
+
+def test_reset_options_can_override_theta_ref_for_episode():
+    env = _make_env(enable_wind=True, wind_pattern="gust", wind_seed=12, theta_ref=0.0)
+    try:
+        obs, info = env.reset(
+            seed=4,
+            options={"randomize": True, "theta_ref": 1.0},
+        )
+
+        assert obs.shape == (3,)
+        assert np.isfinite(obs).all()
+        assert np.isclose(obs[2], 1.0)
+        assert np.isclose(info["theta_ref"], 1.0)
+        assert info["wind_automatic"] is True
+    finally:
+        env.close()

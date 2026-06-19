@@ -2,7 +2,7 @@
 
 ## Alcance
 
-Este documento registra el uso de modelos de lenguaje durante el trabajo del Grupo 2 en la Etapa 2 del proyecto: representacion no supervisada de perturbaciones y validacion sintetico-real. Tambien registra apoyo puntual en la integracion temprana de Etapa 3, especificamente el entorno Gymnasium con perturbaciones automaticas para entrenamiento headless.
+Este documento registra el uso de modelos de lenguaje durante el trabajo del Grupo 2 en la Etapa 2 del proyecto: representacion no supervisada de perturbaciones y validacion sintetico-real. Tambien registra apoyo en la integracion temprana de Etapa 3, especificamente el entorno Gymnasium con perturbaciones automaticas para entrenamiento headless, referencia configurable `theta_ref` y recompensa de seguimiento.
 
 ## Modelos de lenguaje utilizados
 
@@ -37,6 +37,14 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
   - reportar `wind_active`, `wind_mag`, `wind_angle`, `wind_torque`, `wind_pattern`, `configured_wind_pattern` y `wind_automatic` en `info`;
   - mantener `set_wind()` como mecanismo manual para la demo cuando `enable_wind=False`.
 - Creacion de pruebas en `tests/test_learned_pahm_env_wind.py` para el contrato de entorno con perturbaciones.
+- Implementacion del bloque `feature/etapa3-theta-ref-reward` para FR-13:
+  - `theta_ref` configurable por constructor, `set_theta_ref(value)` y `reset(options={"theta_ref": value})`;
+  - observacion expandida a `[theta, theta_dot, theta_ref]`;
+  - `observation_space` actualizado a dimension 3;
+  - recompensa de seguimiento basada en error cuadratico, velocidad angular y esfuerzo de accion;
+  - reporte de `theta_ref`, `tracking_error` y `abs_tracking_error` en `info`;
+  - sincronizacion de `theta_ref` con el slider de setpoint en la demo visual.
+- Ampliacion de `tests/test_learned_pahm_env_wind.py` para cubrir observacion 3D, cambio de recompensa al cambiar `theta_ref`, `reset(options={"randomize": True})` y compatibilidad entre viento automatico y referencia.
 
 ## Estrategias de prompting empleadas
 
@@ -74,6 +82,10 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
 - Se verifico la prioridad explicita entre viento automatico (`enable_wind=True`) y viento manual (`set_wind()`).
 - Se verifico la reproducibilidad separando el RNG de Gymnasium (`reset(seed=...)`) del RNG de `WindProcess` (`wind_seed`).
 - Se verifico que el patron configurado en el constructor no se muta cuando `randomize_wind_pattern=True`; el patron sorteado queda en `active_wind_pattern`.
+- Se verifico que la observacion del entorno tenga dimension 3 y conserve `theta_ref`.
+- Se verifico que cambiar `theta_ref` modifica la recompensa de seguimiento.
+- Se verifico que `reset(options={"randomize": True})` sigue produciendo observaciones validas con `theta_ref`.
+- Se verifico que el entorno con viento automatico y `theta_ref` configurable avanza correctamente en modo headless.
 
 ## Comandos de verificacion
 
@@ -88,13 +100,13 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
 Resultado registrado de la suite completa:
 
 ```text
-38 passed, 1 warning
+42 passed, 1 warning
 ```
 
 Resultado registrado para el contrato especifico del entorno con perturbaciones:
 
 ```text
-5 passed, 1 warning
+9 passed, 1 warning
 ```
 
 ## Recomendaciones tecnicas

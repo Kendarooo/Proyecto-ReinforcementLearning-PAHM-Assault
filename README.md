@@ -132,7 +132,7 @@ Luego activa `stage2_unsupervised.wandb.enabled` en `gym_wrapper/config.json`. P
 
 Al desarrollar extensiones sobre este código base, se deben respetar las siguientes decisiones arquitectónicas acordadas:
 
-1. **Espacio de Observaciones 2D:** El entorno Gymnasium está configurado nativamente para entregar un vector continuo de estado $[ \theta, \dot{\theta} ]$ de tamaño 2. Esto garantiza compatibilidad directa con librerías de RL estándar como *Stable Baselines3*.
+1. **Espacio de Observaciones 3D:** El entorno Gymnasium entrega un vector continuo $[ \theta, \dot{\theta}, \theta_{ref} ]$ de tamaño 3. Esto permite entrenar politicas de seguimiento de referencia con librerias RL estandar como *Stable Baselines3*.
 2. **Sin Envoltura de Ángulo (*No Wrapping*):** El ángulo en el estado interno se mantiene de forma acumulativa y continua. Envolver el ángulo en el intervalo $[-\pi, \pi]$ dentro del estado de la planta oculta los sobregiros y desincroniza los integradores; cualquier transformación visual o matemática debe realizarse externamente de forma aislada.
 3. **Robustez mediante Domain Randomization:** Para mitigar el sobreajuste (*overfitting*) a la trayectoria inicial desde el reposo, el método `reset` acepta el argumento `options={"randomize": True}`. Esto inicializa el episodio en un punto cinemático aleatorio pero seguro.
 4. **Cinemática del Viento y Estelas:** La actualización visual de las partículas de viento calcula su origen y destino basándose en el vector de desplazamiento real por cuadro ($dx, dy$), aplicando un factor de amplificación visual estático para que el flujo sea perfectamente visible incluso ante brisas de baja magnitud.
@@ -154,3 +154,5 @@ elif controller.current_mode == "RL":
 ```
 
 El script de entrenamiento para RL (`train_rl.py`) deberá desarrollarse de forma independiente y configurarse para operar en modo *headless* (sin renderizado gráfico) para maximizar la tasa de cuadros por segundo y acelerar la convergencia del entrenamiento por gradiente de política.
+
+El entorno ya acepta `theta_ref` por constructor o mediante `set_theta_ref(value)`, y reporta `theta_ref`, `tracking_error` y `abs_tracking_error` en `info`.
