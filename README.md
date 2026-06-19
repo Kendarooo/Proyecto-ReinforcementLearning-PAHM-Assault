@@ -161,4 +161,12 @@ python train_rl.py --config gym_wrapper/config.json
 python train_rl.py --config gym_wrapper/config.json --mode all
 ```
 
+La comparación cuantitativa de controladores vive en `evaluate_controllers.py`. Carga modelos ya entrenados, evalúa `naive` y `robust` en modo headless con viento de evaluación, y guarda métricas por episodio y resumen:
+
+```bash
+python evaluate_controllers.py --config configs/stage3_config.json
+```
+
+El resultado queda en `artifacts/stage3/evaluation/controller_metrics.json` y `controller_metrics.csv`, con MAE/MSE de seguimiento, tiempo de estabilización, sobreimpulso y recompensa acumulada.
+
 El entorno ya acepta `theta_ref` por configuracion, constructor, `set_theta_ref(value)` o `reset(options={"theta_ref": value})`, y reporta `theta_ref`, `tracking_error` y `abs_tracking_error` en `info`.

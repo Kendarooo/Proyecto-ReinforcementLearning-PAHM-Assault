@@ -246,13 +246,21 @@ Demo interactiva con politica RL:
 
 La seccion `demo` permite seleccionar `rl_model_type` (`naive` o `robust`), rutas de modelos, `deterministic_policy`, `interactive_wind`, `show_particles` y `show_wind_torque`. Tambien se puede usar `--rl_model` para cargar una politica concreta. Durante la demo, mantener presionada la tecla `G` activa una rafaga manual configurada en `wind.manual_gust_*` sin entrenar modelos.
 
+Evaluacion cuantitativa headless:
+
+```bash
+.venv/bin/python evaluate_controllers.py --config configs/stage3_config.json
+```
+
+La seccion `evaluation` define controladores, rutas de modelos, episodios, pasos maximos, patrones de viento no vistos y tolerancias. El script guarda `controller_metrics.json` y `controller_metrics.csv` con MAE/MSE de seguimiento, tiempo de estabilizacion, sobreimpulso y recompensa acumulada.
+
 Para continuar con Etapa 3B falta:
 
 - entrenar formalmente agentes naive y robusto con corridas largas;
-- comparacion cuantitativa de error de seguimiento, tiempo de estabilizacion y sobreimpulso.
+- registrar las metricas de evaluacion en W&B y preparar las figuras para el PDF final.
 
 Estado verificado de la suite completa:
 
 ```text
-83 passed, 1 skipped, 16 warnings
+89 passed, 1 skipped, 16 warnings
 ```

@@ -61,6 +61,11 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
   - seleccion de modelo `naive`/`robust` desde la seccion `demo` de configuracion;
   - acoplamiento del modo `RL` en `gym_wrapper/test_pahm_ode_env.py`;
   - pruebas con politica mock en `tests/test_rl_policy_demo.py`.
+- Evaluacion cuantitativa headless de controladores:
+  - script `evaluate_controllers.py` para cargar modelos ya entrenados y comparar `naive` vs `robust`;
+  - metricas puras de MAE/MSE de seguimiento, tiempo de estabilizacion, sobreimpulso y recompensa acumulada;
+  - exportacion de `controller_metrics.json` y `controller_metrics.csv`;
+  - pruebas con politicas y entornos mock en `tests/test_evaluate_controllers.py`.
 
 ## Estrategias de prompting empleadas
 

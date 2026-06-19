@@ -192,6 +192,30 @@
     "show_particles": true,
     "show_wind_torque": true
   },
+  "evaluation": {
+    "enabled": true,
+    "num_episodes": 10,
+    "max_steps": 1000,
+    "render": false,
+    "controllers": [
+      "naive",
+      "robust"
+    ],
+    "models": {
+      "naive": "../artifacts/stage3/models/pahm_ppo_naive.zip",
+      "robust": "../artifacts/stage3/models/pahm_ppo_robust.zip"
+    },
+    "output_dir": "../artifacts/stage3/evaluation",
+    "metrics_path": "../artifacts/stage3/evaluation/controller_metrics.json",
+    "settling_tolerance": 0.05,
+    "settling_window": 50,
+    "unseen_wind_patterns": [
+      "gust",
+      "turbulent"
+    ],
+    "wind_enabled": true,
+    "deterministic_policy": true
+  },
   "wandb": {
     "enabled": true,
     "project": "pahm-rl-stage3",
