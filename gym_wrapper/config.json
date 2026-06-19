@@ -116,6 +116,25 @@
     "min_setpoint_deg": 0.0,
     "max_setpoint_deg": 170.0
   },
+  "wind": {
+    "enabled": false,
+    "source": "wind_process",
+    "patterns": [
+      "calm",
+      "gust",
+      "sustained",
+      "turbulent"
+    ],
+    "default_pattern": "gust",
+    "max_torque": 20.0,
+    "stochastic": true
+  },
+  "domain_randomization": {
+    "enabled": true,
+    "reset_options": {
+      "randomize": true
+    }
+  },
   "wind_patterns": {
     "max_wind_torque": 20.0,
     "calm": {

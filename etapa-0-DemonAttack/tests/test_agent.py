@@ -147,6 +147,7 @@ def test_linear_epsilon_schedule_reaches_floor(agent, config):
 
 def test_wrappers_observation_shape(config):
     """Los wrappers producen observaciones de shape (n_frames, H, W, 3) en [0,1]."""
+    pytest.importorskip("ale_py")
     env = make_env(render_mode=None, config=config)
     obs, _ = env.reset(seed=0)
     expected = (config["n_frames"], config["frame_height"], config["frame_width"], 3)
@@ -156,6 +157,7 @@ def test_wrappers_observation_shape(config):
 
 def test_wrappers_pixel_range(config):
     """Los píxeles normalizados están en [0, 1]."""
+    pytest.importorskip("ale_py")
     env = make_env(render_mode=None, config=config)
     obs, _ = env.reset(seed=0)
     assert obs.min() >= 0.0 and obs.max() <= 1.0, "Pixels out of [0,1] range"
@@ -164,6 +166,7 @@ def test_wrappers_pixel_range(config):
 
 def test_wrappers_step_consistency(config):
     """step() devuelve una observación con el mismo shape que reset()."""
+    pytest.importorskip("ale_py")
     env = make_env(render_mode=None, config=config)
     obs, _ = env.reset(seed=0)
     next_obs, _, _, _, _ = env.step(env.action_space.sample())
@@ -173,6 +176,7 @@ def test_wrappers_step_consistency(config):
 
 def test_clip_reward_preserves_raw_reward(config):
     """El wrapper clipea la recompensa pero conserva el valor real en info."""
+    pytest.importorskip("ale_py")
     env = make_env(render_mode=None, config={**config, "clip_rewards": True})
     env.reset(seed=0)
     _, reward, _, _, info = env.step(env.action_space.sample())

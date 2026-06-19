@@ -1,10 +1,17 @@
 # _Autores_: Alexandra Alfaro Elizondo, Kendall Madrigal Campos /Codex
 
+import copy
 from pathlib import Path
 
 import numpy as np
 
+from gym_wrapper.learned_pahm_ode import _load_wrapper_config
 from gym_wrapper.learned_pahm_ode import LearnedPAHMODE
+from gym_wrapper.wind_source import (
+    NoWindSource,
+    WindProcessSource,
+    build_wind_source_from_config,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +26,49 @@ def _make_env(**kwargs) -> LearnedPAHMODE:
         max_wind_torque=20.0,
         **kwargs,
     )
+
+
+def _wrapper_config_with_wind(enabled: bool) -> dict:
+    config = copy.deepcopy(_load_wrapper_config())
+    config["wind"] = {
+        "enabled": enabled,
+        "source": "wind_process",
+        "patterns": ["calm", "gust", "sustained", "turbulent"],
+        "default_pattern": "turbulent",
+        "max_torque": 20.0,
+        "stochastic": True,
+    }
+    config["domain_randomization"] = {
+        "enabled": True,
+        "reset_options": {"randomize": True},
+    }
+    return config
+
+
+def test_wind_source_can_be_built_from_enabled_config():
+    config = _wrapper_config_with_wind(enabled=True)
+
+    source = build_wind_source_from_config(config, seed=123)
+
+    assert isinstance(source, WindProcessSource)
+    sample = source.sample(dt=0.02, theta=0.0)
+    assert sample.active is True
+    assert sample.source == "wind_process"
+    assert sample.pattern == "turbulent"
+    assert np.isfinite(sample.torque)
+    assert 0.0 <= sample.mag <= 1.0
+
+
+def test_wind_source_can_be_disabled_from_config():
+    config = _wrapper_config_with_wind(enabled=False)
+
+    source = build_wind_source_from_config(config, seed=123)
+    sample = source.sample(dt=0.02, theta=0.0)
+
+    assert isinstance(source, NoWindSource)
+    assert sample.active is False
+    assert sample.source == "none"
+    assert sample.torque == 0.0
 
 
 def test_headless_env_with_automatic_wind_returns_valid_info():
@@ -53,6 +103,51 @@ def test_headless_env_with_automatic_wind_returns_valid_info():
         assert env.active_wind_pattern == "turbulent"
         assert 0.0 <= info["wind_mag"] <= 1.0
         assert np.isfinite(info["wind_torque"])
+    finally:
+        env.close()
+
+
+def test_env_can_enable_automatic_wind_from_external_config():
+    config = _wrapper_config_with_wind(enabled=True)
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        config=config,
+        wind_seed=42,
+    )
+    try:
+        obs, reset_info = env.reset(seed=7, options={"randomize": True})
+        next_obs, reward, terminated, truncated, info = env.step(np.array([0.2]))
+
+        assert env.observation_space.contains(obs)
+        assert env.observation_space.contains(next_obs)
+        assert np.isfinite(reward)
+        assert isinstance(terminated, bool)
+        assert isinstance(truncated, bool)
+        assert reset_info["wind_automatic"] is True
+        assert info["wind_automatic"] is True
+        assert info["wind_pattern"] == "turbulent"
+        assert np.isfinite(info["wind_torque"])
+    finally:
+        env.close()
+
+
+def test_env_can_disable_automatic_wind_from_external_config():
+    config = _wrapper_config_with_wind(enabled=False)
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        config=config,
+    )
+    try:
+        _, reset_info = env.reset(seed=7, options={"randomize": True})
+        _, _, _, _, info = env.step(np.array([0.2]))
+
+        assert reset_info["wind_automatic"] is False
+        assert info["wind_automatic"] is False
+        assert info["wind_torque"] == 0.0
     finally:
         env.close()
 

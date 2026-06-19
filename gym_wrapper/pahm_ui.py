@@ -12,14 +12,23 @@ import pygame
 import numpy as np
 import json
 import math
-import os
 from collections import deque
+from pathlib import Path
 
 # --- Carga de Configuración SSOT ---
-def load_config(filename='config.json'):
-    if not os.path.exists(filename):
-        raise FileNotFoundError(f"Archivo de configuración {filename} no encontrado.")
-    with open(filename, 'r') as f:
+def load_config(filename=None):
+    if filename is None or filename == "config.json":
+        config_path = Path(__file__).resolve().with_name("config.json")
+    else:
+        config_path = Path(filename)
+        if not config_path.is_absolute():
+            config_path = Path.cwd() / config_path
+
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Archivo de configuración {config_path} no encontrado."
+        )
+    with config_path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
 CONFIG = load_config()

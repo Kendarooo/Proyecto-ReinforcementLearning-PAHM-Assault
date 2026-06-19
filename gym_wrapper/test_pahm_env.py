@@ -9,13 +9,40 @@
 
 import gymnasium as gym
 from gymnasium.wrappers import TimeLimit
-from learned_pahm import LearnedPAHM
 import numpy as np
 import pygame
 import sys
 import signal
 import argparse
-from pahm_ui import PAHMController, Oscilloscope, CONFIG
+
+try:
+    from learned_pahm import LearnedPAHM
+except ImportError:
+    try:
+        from learned_pahm_ode import LearnedPAHMODE as LearnedPAHM
+    except ImportError:
+        from gym_wrapper.learned_pahm_ode import LearnedPAHMODE as LearnedPAHM
+
+try:
+    from pahm_ui import PAHMController, Oscilloscope, CONFIG
+except ImportError:
+    from gym_wrapper.pahm_ui import PAHMController, Oscilloscope, CONFIG
+
+
+def _build_env(render_mode: str, model_name: str, reset_angle: float):
+    try:
+        return LearnedPAHM(
+            render_mode=render_mode,
+            model_name=model_name,
+            reset_angle=reset_angle,
+        )
+    except TypeError:
+        return LearnedPAHM(
+            render_mode=render_mode,
+            model_path=model_name,
+            reset_angle_deg=reset_angle,
+            max_wind_torque=CONFIG["wind_patterns"]["max_wind_torque"],
+        )
 
 def main():
     # Parsear argumentos de línea de comandos
@@ -82,10 +109,10 @@ Ejemplos de uso:
     
     # Crear entorno con parámetros personalizados
     try:
-        base_env = LearnedPAHM(
-            render_mode="rgb_array", 
+        base_env = _build_env(
+            render_mode="rgb_array",
             model_name=args.model,
-            reset_angle=args.reset_angle
+            reset_angle=args.reset_angle,
         )
         # Aplicar wrapper TimeLimit para manejar truncamiento automático
         env = TimeLimit(base_env, max_episode_steps=args.max_steps)

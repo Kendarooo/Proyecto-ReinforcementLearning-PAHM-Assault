@@ -1,40 +1,25 @@
-
-# Core numeric and data stack
-numpy
+# Dependencias core exigidas por el código base (Python 3.12)
+torch==2.3.1
+torchvision
+torchdiffeq
+numpy==1.26.4
 pandas
 scipy
 scikit-learn
-matplotlib
-
-# Deep learning and model training
-torch
-torchvision
-torchdiffeq
-
-# Reinforcement learning environments and Atari support
-gymnasium[atari]
-ale-py
-autorom
-stable-baselines3
-
-# Visualization and image preprocessing
-pygame
-opencv-python
-
-# Experiment tracking and quality checks
-wandb
-pytest
-ruff
-=======
-# Dependencias Core exigidas por el Código Base (Python 3.12)
-torch==2.3.1
-numpy==1.26.4
-gymnasium==0.29.1
-pygame==2.5.2
 matplotlib==3.8.4
 
-# Herramientas de Calidad de Software, TDD y MLOps del Grupo 1
-pytest==8.1.1
-pylint==3.1.0
-wandb==0.16.6
+# Entornos Gymnasium, Atari y RL
+gymnasium[atari]==0.29.1
+ale-py
+autorom[accept-rom-license]
+stable-baselines3
 
+# Visualización e imagen
+pygame==2.5.2
+opencv-python==4.10.0.84
+
+# MLOps, pruebas y calidad
+wandb==0.16.6
+pytest==8.1.1
+ruff
+pylint==3.1.0

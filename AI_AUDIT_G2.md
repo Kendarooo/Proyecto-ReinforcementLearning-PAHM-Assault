@@ -33,6 +33,8 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
   - permitir import y ejecucion headless sin depender de Pygame;
   - cargar `config.json` usando `__file__` como ancla en vez del directorio actual de ejecucion;
   - integrar `WindProcess` como fuente automatica opcional de perturbaciones;
+  - encapsular la perturbacion automatica detras de `WindSource` para poder sustituir `WindProcess` por una fuente aprendida sin reescribir `env.step()`;
+  - permitir construir la fuente de viento desde `gym_wrapper/config.json`;
   - separar `configured_wind_pattern` y `active_wind_pattern`;
   - reportar `wind_active`, `wind_mag`, `wind_angle`, `wind_torque`, `wind_pattern`, `configured_wind_pattern` y `wind_automatic` en `info`;
   - mantener `set_wind()` como mecanismo manual para la demo cuando `enable_wind=False`.

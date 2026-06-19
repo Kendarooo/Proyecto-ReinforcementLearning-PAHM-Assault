@@ -6,14 +6,30 @@
 # Versión: 1.6.0
 
 from gymnasium.wrappers import TimeLimit
-from learned_pahm_ode import LearnedPAHMODE
 import numpy as np
 import pygame
 import signal
 import argparse
-from pahm_ui import PAHMController, Oscilloscope, CONFIG
-from pid import PIDController
-from wind_process import WindProcess
+
+try:
+    from learned_pahm_ode import LearnedPAHMODE
+except ImportError:
+    from gym_wrapper.learned_pahm_ode import LearnedPAHMODE
+
+try:
+    from pahm_ui import PAHMController, Oscilloscope, CONFIG
+except ImportError:
+    from gym_wrapper.pahm_ui import PAHMController, Oscilloscope, CONFIG
+
+try:
+    from pid import PIDController
+except ImportError:
+    from gym_wrapper.pid import PIDController
+
+try:
+    from wind_process import WindProcess
+except ImportError:
+    from gym_wrapper.wind_process import WindProcess
 
 def main():
     parser = argparse.ArgumentParser(description='Test Neural ODE Environment')

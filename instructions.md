@@ -104,6 +104,19 @@ obs, info = env.reset(seed=123, options={"randomize": True})
 obs, reward, terminated, truncated, info = env.step([0.2])
 ```
 
+Tambien puede tomar la fuente automatica desde `gym_wrapper/config.json`:
+
+```json
+"wind": {
+  "enabled": false,
+  "source": "wind_process",
+  "patterns": ["calm", "gust", "sustained", "turbulent"],
+  "default_pattern": "gust",
+  "max_torque": 20.0,
+  "stochastic": true
+}
+```
+
 La observacion del entorno para Etapa 3 es:
 
 ```text
@@ -126,7 +139,9 @@ Campos utiles en `info`:
 Reglas importantes:
 
 - `render_mode=None` no requiere Pygame durante el import ni durante entrenamiento headless.
+- Si `enable_wind` no se pasa al constructor, el entorno usa `wind.enabled` desde `config.json`.
 - `enable_wind=True` da prioridad a `WindProcess`; `set_wind()` queda para demo/manual cuando `enable_wind=False`.
+- La fuente automatica se construye mediante `WindSource`, lo que permite sustituir `WindProcess` por otra fuente futura sin cambiar el lazo principal del entorno.
 - `theta_ref` se puede configurar por constructor, por `set_theta_ref(value)` o por `reset(options={"theta_ref": value})`.
 - `wind_seed` controla el RNG interno de `WindProcess`.
 - `reset(seed=...)` controla el RNG del entorno Gymnasium, incluyendo estado inicial y seleccion de patron cuando `randomize_wind_pattern=True`.
@@ -140,7 +155,7 @@ Tests especificos de este branch:
 Estado verificado:
 
 ```text
-9 passed, 1 warning
+13 passed
 ```
 
 ## 5. Etapa 1: exportar tau_w

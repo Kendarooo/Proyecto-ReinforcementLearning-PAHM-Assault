@@ -27,9 +27,9 @@ except ImportError:
     raise ImportError("No se pudieron importar los modelos. Verifique ../pahm_model/")
 
 try:
-    from wind_process import WindProcess
+    from wind_source import build_wind_source_from_config
 except ImportError:
-    from gym_wrapper.wind_process import WindProcess
+    from gym_wrapper.wind_source import build_wind_source_from_config
 
 
 def _load_wrapper_config() -> dict:
@@ -81,15 +81,16 @@ class LearnedPAHMODE(gym.Env):
                  model_path="pahm_ode_best.pth",
                  reset_angle_deg=120,
                  dt=0.02,                 # 50Hz por defecto
-                 max_wind_torque=20.0,
-                 enable_wind: bool = False,
-                 wind_pattern: str = "gust",
+                 max_wind_torque: float | None = None,
+                 enable_wind: bool | None = None,
+                 wind_pattern: str | None = None,
                  wind_config: dict | None = None,
                  wind_seed: int | None = None,
                  randomize_wind_pattern: bool = False,
                  theta_ref: float = 0.0,
-                 reward_weights: dict | None = None):
-                 # Escala física del torque de viento): # 50Hz por defecto
+                 reward_weights: dict | None = None,
+                 config: dict | None = None,
+                 wind_source: str | None = None):
         
         self.model_path = model_path
         self.render_mode = render_mode
@@ -97,6 +98,8 @@ class LearnedPAHMODE(gym.Env):
         self.reset_angle_deg = reset_angle_deg
                 
         self.device = "cpu" # CPU es preferible para inferencia paso a paso (baja latencia)
+        wrapper_config = config or _load_wrapper_config()
+        wind_settings = wrapper_config.get("wind", {})
         
         # Cargar Modelo ODE
         print(f"🔄 Cargando modelo ODE desde: {self.model_path}")
@@ -143,21 +146,42 @@ class LearnedPAHMODE(gym.Env):
         self.wind_mag = 0.0
         self.wind_angle = 0.0
         self.wind_torque = 0.0
-        self.enable_wind = enable_wind
-        self.configured_wind_pattern = wind_pattern
-        self.active_wind_pattern = wind_pattern
+        self.enable_wind = (
+            bool(wind_settings.get("enabled", False))
+            if enable_wind is None
+            else bool(enable_wind)
+        )
+        self.configured_wind_pattern = (
+            wind_pattern
+            if wind_pattern is not None
+            else wind_settings.get("default_pattern", "gust")
+        )
+        self.active_wind_pattern = self.configured_wind_pattern
         self.randomize_wind_pattern = randomize_wind_pattern
         self.wind_seed = wind_seed
-        # Escala recibida por constructor (SSOT en config.json; la lee el
-        # script que instancia el entorno, no el entorno).
-        self.max_wind_torque = max_wind_torque
-
-        wrapper_config = _load_wrapper_config()
         self.wind_patterns_config = wind_config or wrapper_config["wind_patterns"]
-        self.wind_process = None
+        self.max_wind_torque = (
+            float(max_wind_torque)
+            if max_wind_torque is not None
+            else float(
+                wind_settings.get(
+                    "max_torque",
+                    self.wind_patterns_config.get("max_wind_torque", 0.0),
+                )
+            )
+        )
+
+        self.wind_source = build_wind_source_from_config(
+            wrapper_config,
+            wind_patterns_config=self.wind_patterns_config,
+            seed=wind_seed,
+            enabled_override=self.enable_wind,
+            source_override=wind_source,
+            pattern_override=self.configured_wind_pattern,
+            max_torque_override=self.max_wind_torque,
+        )
+        self.wind_process = getattr(self.wind_source, "process", None)
         if self.enable_wind:
-            self.wind_process = WindProcess(self.wind_patterns_config, seed=wind_seed)
-            self.wind_process.set_pattern(self.active_wind_pattern)
             self.wind_active = True
 
         # Cargar configuración visual de partículas
@@ -195,7 +219,9 @@ class LearnedPAHMODE(gym.Env):
         
     def _sample_wind_pattern(self) -> str:
         if self.randomize_wind_pattern:
-            patterns = list(WindProcess.PATTERNS)
+            patterns = list(getattr(self.wind_source, "patterns", ()))
+            if not patterns:
+                return self.configured_wind_pattern
             return str(self.np_random.choice(patterns))
         return self.configured_wind_pattern
 
@@ -204,13 +230,18 @@ class LearnedPAHMODE(gym.Env):
             self.wind_torque = 0.0
             return
         self.active_wind_pattern = self._sample_wind_pattern()
-        self.wind_process.set_pattern(self.active_wind_pattern)
+        self.wind_source.set_pattern(self.active_wind_pattern)
         self.wind_active = True
 
     def _resolve_wind_for_step(self) -> float:
         if self.enable_wind:
-            self.wind_mag, self.wind_angle = self.wind_process.step(self.dt)
-            self.wind_active = True
+            sample = self.wind_source.sample(self.dt, float(self.state[0]))
+            self.wind_mag = sample.mag
+            self.wind_angle = sample.angle
+            self.wind_torque = sample.torque
+            self.wind_active = sample.active
+            self.active_wind_pattern = sample.pattern
+            return self.wind_torque
 
         tau_val = 0.0
         if self.wind_active:

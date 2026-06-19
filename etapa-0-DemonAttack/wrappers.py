@@ -1,13 +1,21 @@
 """Environment wrappers for DemonAttack: resize, RGB frame stack, normalization."""
 
-import ale_py
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
+from gymnasium.error import DependencyNotInstalled
 
-gym.register_envs(ale_py)
 from collections import deque
 import cv2
+
+try:
+    import ale_py
+except ImportError:
+    ale_py = None
+else:
+    from ale_py.registration import register_v5_envs
+
+    register_v5_envs()
 
 
 class ResizeRGB(gym.ObservationWrapper):
@@ -81,6 +89,12 @@ class ClipReward(gym.Wrapper):
 
 def make_env(render_mode: str | None = None, config: dict | None = None) -> gym.Env:
     """Build the DemonAttack environment with all wrappers applied."""
+    if ale_py is None:
+        raise DependencyNotInstalled(
+            "ale-py is required to build ALE/DemonAttack-v5. "
+            "Install the Atari extras from requirements.txt."
+        )
+
     cfg = config or {}
     width = cfg.get("frame_width", 84)
     height = cfg.get("frame_height", 84)

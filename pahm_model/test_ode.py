@@ -12,6 +12,8 @@ from dataloader import get_dataloaders
 from pahm_ode import PAHMHybridODE
 from pahm_fast import PAHMFastModel
 
+__test__ = False
+
 def test_ode():
     parser = argparse.ArgumentParser(description='Test Neural ODE for PAHM')
     parser.add_argument('--model_path', type=str, required=True, 

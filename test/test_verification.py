@@ -172,6 +172,11 @@ def test_open_loop_baseline_comparison_fr7() -> None:
         hparams["checkpoint_dir"],
         f"estimator_checkpoint_epoch_{hparams['epochs']}.pth"
     )
+    if not os.path.exists(checkpoint_path):
+        pytest.skip(
+            "Checkpoint de Etapa 1 no disponible para FR-7: "
+            f"{checkpoint_path}"
+        )
     checkpoint = torch.load(
         checkpoint_path, map_location=device, weights_only=True
     )
