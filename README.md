@@ -155,6 +155,10 @@ elif controller.current_mode == "RL":
     rl_action = agente.predict(obs)
 ```
 
-El script de entrenamiento para RL (`train_rl.py`) deberá desarrollarse de forma independiente y configurarse para operar en modo *headless* (sin renderizado gráfico) para maximizar la tasa de cuadros por segundo y acelerar la convergencia del entrenamiento por gradiente de política.
+El script de entrenamiento RL vive en `train_rl.py` y opera en modo *headless* (sin renderizado gráfico). Lee `rl_training` desde `gym_wrapper/config.json`, permite modos `naive` y `robust`, y guarda el modelo final en la ruta configurada:
+
+```bash
+python train_rl.py --config gym_wrapper/config.json
+```
 
 El entorno ya acepta `theta_ref` por configuracion, constructor, `set_theta_ref(value)` o `reset(options={"theta_ref": value})`, y reporta `theta_ref`, `tracking_error` y `abs_tracking_error` en `info`.

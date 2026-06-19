@@ -211,17 +211,29 @@ Entrenar GMM desde un manifiesto de `tau_w`:
 
 ## 7. Estado para Etapa 3
 
-Etapa 1, Etapa 2 y los primeros bloques de Etapa 3 para entorno con perturbaciones, `theta_ref` configurable y recompensa de seguimiento pasan las pruebas actuales. Para continuar con Etapa 3B falta implementar:
+Etapa 1, Etapa 2 y los bloques actuales de Etapa 3 para entorno con perturbaciones, `theta_ref` configurable, recompensa de seguimiento y entrenamiento RL headless pasan las pruebas actuales.
 
-- `train_rl.py` headless con Stable Baselines3;
-- agentes naive y robusto;
+Entrenamiento RL headless:
+
+```bash
+.venv/bin/python train_rl.py --config gym_wrapper/config.json
+```
+
+La seccion `rl_training` de `gym_wrapper/config.json` controla:
+
+- `mode`: `naive` desactiva viento; `robust` activa perturbaciones.
+- `algorithm`: `PPO`, `A2C` o `SAC`.
+- `total_timesteps`, `learning_rate`, `gamma`, `n_steps`, `batch_size`.
+- `model_output_dir`, `model_name`, `checkpoint_freq` y `log_dir`.
+
+Para continuar con Etapa 3B falta:
+
+- entrenar formalmente agentes naive y robusto con corridas largas;
 - carga de politica entrenada en el modo `RL` de la demo;
 - comparacion cuantitativa de error de seguimiento, tiempo de estabilizacion y sobreimpulso.
 
 Estado verificado de la suite completa:
 
 ```text
-42 passed, 1 warning
+66 passed, 3 skipped, 16 warnings
 ```
-
-Antes de entregar, limpiar `requirements.txt`: actualmente contiene marcadores de conflicto Git.

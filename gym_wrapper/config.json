@@ -145,6 +145,24 @@
       "randomize": true
     }
   },
+  "rl_training": {
+    "enabled": true,
+    "mode": "naive",
+    "algorithm": "PPO",
+    "total_timesteps": 10000,
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "n_steps": 2048,
+    "batch_size": 64,
+    "device": "auto",
+    "render": false,
+    "model_path": "../pahm_model/pahm_fast_v2_best.pth",
+    "reset_angle_deg": 720,
+    "model_output_dir": "../artifacts/stage3/models",
+    "model_name": "pahm_ppo_naive",
+    "checkpoint_freq": 5000,
+    "log_dir": "../artifacts/stage3/logs"
+  },
   "wind_patterns": {
     "max_wind_torque": 20.0,
     "calm": {

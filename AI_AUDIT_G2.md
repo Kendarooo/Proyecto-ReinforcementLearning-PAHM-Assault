@@ -47,6 +47,13 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
   - reporte de `theta_ref`, `tracking_error` y `abs_tracking_error` en `info`;
   - sincronizacion de `theta_ref` con el slider de setpoint en la demo visual.
 - Ampliacion de `tests/test_learned_pahm_env_wind.py` para cubrir observacion 3D, cambio de recompensa al cambiar `theta_ref`, `reset(options={"randomize": True})` y compatibilidad entre viento automatico y referencia.
+- Implementacion de `train_rl.py` como entrada headless independiente para entrenamiento con Stable Baselines3:
+  - carga de `rl_training` desde configuracion externa;
+  - modos `naive` y `robust` para desactivar/activar perturbaciones;
+  - construccion de entorno con `render_mode=None`;
+  - seleccion configurable de algoritmo (`PPO`, `A2C`, `SAC`);
+  - guardado final de modelo y callbacks de checkpoint configurables;
+  - pruebas smoke en `tests/test_train_rl.py`, con skip controlado si `stable-baselines3` no esta instalado.
 
 ## Estrategias de prompting empleadas
 
