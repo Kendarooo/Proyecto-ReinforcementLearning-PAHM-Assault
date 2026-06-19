@@ -169,4 +169,6 @@ python evaluate_controllers.py --config configs/stage3_config.json
 
 El resultado queda en `artifacts/stage3/evaluation/controller_metrics.json` y `controller_metrics.csv`, con MAE/MSE de seguimiento, tiempo de estabilización, sobreimpulso y recompensa acumulada.
 
+La telemetría de Etapa 3 está centralizada en `pahm_stage3/wandb_logger.py`. La sección `wandb` permite activar/desactivar W&B, usar `mode=disabled` para pruebas locales, y controlar `log_models`/`log_evaluation`. Cuando está habilitado, el entrenamiento registra hiperparámetros, configuración de entorno/recompensa/viento, métricas de entrenamiento y artefactos de modelo/config; la evaluación registra métricas comparativas y artefactos JSON/CSV.
+
 El entorno ya acepta `theta_ref` por configuracion, constructor, `set_theta_ref(value)` o `reset(options={"theta_ref": value})`, y reporta `theta_ref`, `tracking_error` y `abs_tracking_error` en `info`.

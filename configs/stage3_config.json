@@ -104,6 +104,8 @@
     "project": "pahm-rl-stage3",
     "entity": null,
     "mode": "disabled",
+    "log_models": true,
+    "log_evaluation": true,
     "tags": [
       "stage3",
       "rl",

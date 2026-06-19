@@ -66,6 +66,11 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
   - metricas puras de MAE/MSE de seguimiento, tiempo de estabilizacion, sobreimpulso y recompensa acumulada;
   - exportacion de `controller_metrics.json` y `controller_metrics.csv`;
   - pruebas con politicas y entornos mock en `tests/test_evaluate_controllers.py`.
+- Telemetria W&B de Etapa 3:
+  - modulo `pahm_stage3/wandb_logger.py` para inicializar corridas, armar payloads de hiperparametros/entorno, registrar metricas y artefactos;
+  - integracion en entrenamiento RL y evaluacion cuantitativa con `mode=disabled` usable en pruebas;
+  - controles `wandb.enabled`, `wandb.log_models` y `wandb.log_evaluation`;
+  - pruebas con mocks en `tests/test_stage3_wandb_logger.py`.
 
 ## Estrategias de prompting empleadas
 

@@ -9,6 +9,15 @@ from pathlib import Path
 from typing import Any
 
 from gym_wrapper.learned_pahm_ode import LearnedPAHMODE
+from pahm_stage3.wandb_logger import (
+    DEFAULT_WANDB,
+    NullWandbRun,
+    finish_wandb_run,
+    init_wandb_run,
+    log_file_artifact,
+    log_model_artifact,
+    log_training_metrics,
+)
 
 
 DEFAULT_RL_TRAINING = {
@@ -41,23 +50,6 @@ DEFAULT_EXPERIMENTS = {
         "model_name": "pahm_ppo_robust",
     },
 }
-
-DEFAULT_WANDB = {
-    "enabled": False,
-    "project": "pahm-rl-stage3",
-    "entity": None,
-    "mode": "disabled",
-    "tags": ["stage3", "rl", "pahm"],
-}
-
-
-class _NullWandbRun:
-    def log(self, data: dict[str, Any]) -> None:
-        return None
-
-    def finish(self) -> None:
-        return None
-
 
 def _resolve_path(path_value: str | Path, base_dir: Path) -> Path:
     path = Path(path_value)
@@ -216,7 +208,8 @@ def _WandbMetricsCallback(wandb_run, base_callback_cls):
         def _on_step(self) -> bool:
             payload = {
                 "train/num_timesteps": self.num_timesteps,
-                "train/mode": self.training_env.get_attr("enable_wind")[0]
+                "train/mode": config_mode,
+                "train/wind_enabled": self.training_env.get_attr("enable_wind")[0]
                 if self.training_env is not None
                 else None,
             }
@@ -229,37 +222,25 @@ def _WandbMetricsCallback(wandb_run, base_callback_cls):
                     payload["train/abs_tracking_error"] = info["abs_tracking_error"]
                 if "wind_torque" in info:
                     payload["train/wind_torque"] = info["wind_torque"]
-            wandb_run.log(payload)
+            if "train/loss" in self.locals:
+                payload["train/loss"] = self.locals["train/loss"]
+            log_training_metrics(wandb_run, payload, step=self.num_timesteps)
             return True
 
+    config_mode = getattr(wandb_run, "_stage3_mode", None)
     return WandbMetricsCallback()
 
 
 def _start_wandb_run(config: dict[str, Any]):
-    wandb_config = config.get("wandb", {})
-    if not wandb_config.get("enabled", False):
-        return _NullWandbRun()
-
-    try:
-        import wandb
-    except ImportError as exc:
-        raise ImportError("wandb es requerido cuando wandb.enabled=true") from exc
-
     rl_config = config["rl_training"]
-    return wandb.init(
-        project=wandb_config.get("project"),
-        entity=wandb_config.get("entity"),
-        mode=wandb_config.get("mode", "online"),
-        tags=wandb_config.get("tags", []),
-        name=f"{rl_config['model_name']}-{rl_config['mode']}",
-        config={
-            "rl_training": rl_config,
-            "control": config.get("control", {}),
-            "reward": config.get("reward", {}),
-            "wind": config.get("wind", {}),
-            "domain_randomization": config.get("domain_randomization", {}),
-        },
+    run = init_wandb_run(
+        config,
+        run_name=f"{rl_config['model_name']}-{rl_config['mode']}",
+        tags=[f"mode:{rl_config['mode']}"],
+        job_type="train_rl",
     )
+    setattr(run, "_stage3_mode", rl_config["mode"])
+    return run
 
 
 def train_from_config(config_path: str | Path, mode: str | None = None) -> str:
@@ -293,9 +274,22 @@ def train_from_config(config_path: str | Path, mode: str | None = None) -> str:
                 "train/total_timesteps": int(rl_config["total_timesteps"]),
             }
         )
+        log_model_artifact(
+            wandb_run,
+            saved_path,
+            f"pahm-rl-{rl_config['mode']}",
+            config,
+        )
+        log_file_artifact(
+            wandb_run,
+            config["_config_path"],
+            f"pahm-rl-{rl_config['mode']}-config",
+            artifact_type="config",
+            enabled=not isinstance(wandb_run, NullWandbRun),
+        )
         return saved_path
     finally:
-        wandb_run.finish()
+        finish_wandb_run(wandb_run)
         env.close()
 
 

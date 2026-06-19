@@ -13,6 +13,14 @@ import numpy as np
 
 from gym_wrapper.learned_pahm_ode import LearnedPAHMODE
 from gym_wrapper.rl_policy import load_rl_policy, predict_rl_action
+from pahm_stage3.wandb_logger import (
+    NullWandbRun,
+    finish_wandb_run,
+    init_wandb_run,
+    log_evaluation_metrics,
+    log_file_artifact,
+    normalize_wandb_config,
+)
 from train_rl import load_config
 
 
@@ -224,6 +232,7 @@ def compare_controllers(
     *,
     policy_loader: Callable[[Path, str], Any] | None = None,
     env_factory: Callable[[dict[str, Any], str, int | None], Any] | None = None,
+    wandb_module=None,
 ) -> dict[str, Any]:
     config = load_config(config_path)
     evaluation = _evaluation_config(config)
@@ -234,36 +243,47 @@ def compare_controllers(
     loader = policy_loader or (lambda path, algorithm: load_rl_policy(path, algorithm=algorithm))
     make_env = env_factory or make_evaluation_env
     algorithm = config["rl_training"].get("algorithm", "PPO")
+    wandb_run = init_wandb_run(
+        config,
+        run_name="stage3-controller-evaluation",
+        tags=["evaluation"],
+        job_type="evaluate_controllers",
+        wandb_module=wandb_module,
+    )
 
-    controller_results = {}
-    for controller in evaluation["controllers"]:
-        model_path = model_paths[controller]
-        if not model_path.exists():
-            raise FileNotFoundError(f"Evaluation model not found for {controller}: {model_path}")
-        policy = loader(model_path, algorithm)
-        env = make_env(config, controller, None)
-        try:
-            result = evaluate_controller(policy, env, config, controller_name=controller)
-        finally:
-            close = getattr(env, "close", None)
-            if callable(close):
-                close()
-        result["model_path"] = str(model_path)
-        controller_results[controller] = result
+    try:
+        controller_results = {}
+        for controller in evaluation["controllers"]:
+            model_path = model_paths[controller]
+            if not model_path.exists():
+                raise FileNotFoundError(f"Evaluation model not found for {controller}: {model_path}")
+            policy = loader(model_path, algorithm)
+            env = make_env(config, controller, None)
+            try:
+                result = evaluate_controller(policy, env, config, controller_name=controller)
+            finally:
+                close = getattr(env, "close", None)
+                if callable(close):
+                    close()
+            result["model_path"] = str(model_path)
+            controller_results[controller] = result
 
-    payload = {
-        "controllers": list(evaluation["controllers"]),
-        "summary": {
-            controller: result["summary"]
-            for controller, result in controller_results.items()
-        },
-        "results": controller_results,
-        "artifacts": {},
-    }
-    artifacts = _write_results(payload, config)
-    payload["artifacts"] = artifacts
-    _rewrite_json(payload, Path(artifacts["metrics_path"]))
-    return payload
+        payload = {
+            "controllers": list(evaluation["controllers"]),
+            "summary": {
+                controller: result["summary"]
+                for controller, result in controller_results.items()
+            },
+            "results": controller_results,
+            "artifacts": {},
+        }
+        artifacts = _write_results(payload, config)
+        payload["artifacts"] = artifacts
+        _rewrite_json(payload, Path(artifacts["metrics_path"]))
+        _log_evaluation_to_wandb(wandb_run, payload, config, wandb_module=wandb_module)
+        return payload
+    finally:
+        finish_wandb_run(wandb_run)
 
 
 def _evaluation_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -349,6 +369,35 @@ def _write_results(payload: dict[str, Any], config: dict[str, Any]) -> dict[str,
         "metrics_path": str(metrics_path),
         "csv_path": str(csv_path),
     }
+
+
+def _log_evaluation_to_wandb(
+    wandb_run,
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    wandb_module=None,
+) -> None:
+    if isinstance(wandb_run, NullWandbRun):
+        return
+    wandb_config = normalize_wandb_config(config)
+    if not wandb_config.get("log_evaluation", True):
+        return
+
+    log_evaluation_metrics(wandb_run, payload)
+    artifacts = payload.get("artifacts", {})
+    for key in ("metrics_path", "csv_path"):
+        path = artifacts.get(key)
+        if not path:
+            continue
+        log_file_artifact(
+            wandb_run,
+            path,
+            f"stage3-controller-{Path(path).stem}",
+            artifact_type="metrics",
+            enabled=True,
+            wandb_module=wandb_module,
+        )
 
 
 def _rewrite_json(payload: dict[str, Any], metrics_path: Path) -> None:

@@ -173,3 +173,67 @@ def test_compare_controllers_writes_results_for_naive_and_robust(tmp_path):
     assert set(saved["summary"]) == {"naive", "robust"}
     assert policies["naive"].learn_called is False
     assert policies["robust"].learn_called is False
+
+
+def test_compare_controllers_logs_evaluation_to_wandb_when_enabled(tmp_path):
+    config = _config(tmp_path)
+    config["wandb"] = {
+        "enabled": True,
+        "project": "pahm-rl-stage3-test",
+        "mode": "disabled",
+        "tags": ["stage3", "eval"],
+        "log_models": False,
+        "log_evaluation": True,
+    }
+    config_path = tmp_path / "stage3_eval_wandb.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    logged_payloads = []
+    logged_artifacts = []
+
+    class FakeRun:
+        def log(self, payload, step=None):
+            logged_payloads.append(payload)
+
+        def log_artifact(self, artifact):
+            logged_artifacts.append(artifact)
+
+        def finish(self):
+            logged_payloads.append({"finished": True})
+
+    class FakeArtifact:
+        def __init__(self, name, type):
+            self.name = name
+            self.type = type
+            self.files = []
+
+        def add_file(self, path):
+            self.files.append(str(path))
+
+    class FakeWandb:
+        Artifact = FakeArtifact
+
+        def __init__(self):
+            self.run = FakeRun()
+            self.init_kwargs = None
+
+        def init(self, **kwargs):
+            self.init_kwargs = kwargs
+            return self.run
+
+    fake_wandb = FakeWandb()
+    policies = {
+        "naive": MockPolicy(action=0.1),
+        "robust": MockPolicy(action=0.4),
+    }
+
+    compare_controllers(
+        config_path,
+        policy_loader=lambda path, algorithm: policies[Path(path).stem.replace("pahm_ppo_", "")],
+        env_factory=lambda config, controller, episode_index: MockEvaluationEnv(),
+        wandb_module=fake_wandb,
+    )
+
+    assert fake_wandb.init_kwargs["mode"] == "disabled"
+    assert any("eval/naive/mae_tracking_error_mean" in payload for payload in logged_payloads)
+    assert any(artifact.type == "metrics" for artifact in logged_artifacts)
+    assert {"finished": True} in logged_payloads

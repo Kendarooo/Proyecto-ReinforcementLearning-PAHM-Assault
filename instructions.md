@@ -233,7 +233,7 @@ La seccion `experiments` define los modos a ejecutar y sus nombres de modelo:
 - `experiments.naive.model_name`: `pahm_ppo_naive`.
 - `experiments.robust.model_name`: `pahm_ppo_robust`.
 
-La seccion `wandb` permite registrar hiperparametros, modo, ruta del modelo y metricas disponibles. Para pruebas puede mantenerse con `enabled=false` o `mode=disabled`.
+La seccion `wandb` permite registrar hiperparametros, modo, ruta del modelo, metricas de entrenamiento/evaluacion y artefactos. Para pruebas puede mantenerse con `enabled=false` o `mode=disabled`; `log_models` y `log_evaluation` controlan artefactos de modelos y reportes.
 
 Demo interactiva con politica RL:
 
@@ -252,15 +252,15 @@ Evaluacion cuantitativa headless:
 .venv/bin/python evaluate_controllers.py --config configs/stage3_config.json
 ```
 
-La seccion `evaluation` define controladores, rutas de modelos, episodios, pasos maximos, patrones de viento no vistos y tolerancias. El script guarda `controller_metrics.json` y `controller_metrics.csv` con MAE/MSE de seguimiento, tiempo de estabilizacion, sobreimpulso y recompensa acumulada.
+La seccion `evaluation` define controladores, rutas de modelos, episodios, pasos maximos, patrones de viento no vistos y tolerancias. El script guarda `controller_metrics.json` y `controller_metrics.csv` con MAE/MSE de seguimiento, tiempo de estabilizacion, sobreimpulso y recompensa acumulada. Si `wandb.enabled=true` y `wandb.log_evaluation=true`, tambien registra el resumen comparativo y los artefactos de metricas.
 
 Para continuar con Etapa 3B falta:
 
 - entrenar formalmente agentes naive y robusto con corridas largas;
-- registrar las metricas de evaluacion en W&B y preparar las figuras para el PDF final.
+- preparar las figuras y tablas finales para el PDF usando las metricas exportadas/W&B.
 
 Estado verificado de la suite completa:
 
 ```text
-89 passed, 1 skipped, 16 warnings
+95 passed, 1 skipped, 16 warnings
 ```

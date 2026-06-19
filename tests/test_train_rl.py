@@ -166,15 +166,34 @@ def test_train_all_modes_saves_one_model_per_configured_mode(tmp_path, monkeypat
 
 def test_wandb_mock_receives_saved_model_path(tmp_path, monkeypatch):
     logged_payloads = []
+    logged_artifacts = []
+
+    class FakeArtifact:
+        def __init__(self, name, type):
+            self.name = name
+            self.type = type
+            self.files = []
+
+        def add_file(self, path):
+            self.files.append(str(path))
 
     class FakeWandbRun:
         def log(self, payload):
             logged_payloads.append(payload)
 
+        def log_artifact(self, artifact):
+            logged_artifacts.append(artifact)
+
         def finish(self):
             logged_payloads.append({"finished": True})
 
-    fake_wandb = SimpleNamespace(init=lambda **kwargs: FakeWandbRun())
+    init_kwargs = {}
+
+    def fake_init(**kwargs):
+        init_kwargs.update(kwargs)
+        return FakeWandbRun()
+
+    fake_wandb = SimpleNamespace(init=fake_init, Artifact=FakeArtifact)
     monkeypatch.setitem(sys.modules, "wandb", fake_wandb)
     monkeypatch.setattr("train_rl.build_agent", lambda *args, **kwargs: FakeAgent())
 
@@ -187,7 +206,11 @@ def test_wandb_mock_receives_saved_model_path(tmp_path, monkeypatch):
     model_path = train_from_config(config_path, mode="naive")
 
     assert Path(model_path).exists()
+    assert init_kwargs["mode"] == "disabled"
+    assert init_kwargs["config"]["training"]["algorithm"] == "PPO"
     assert any(payload.get("model/path") == model_path for payload in logged_payloads)
+    assert any(artifact.type == "model" for artifact in logged_artifacts)
+    assert any(artifact.type == "config" for artifact in logged_artifacts)
     assert {"finished": True} in logged_payloads
 
 
