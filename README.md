@@ -137,6 +137,7 @@ Al desarrollar extensiones sobre este código base, se deben respetar las siguie
 3. **Robustez mediante Domain Randomization:** Para mitigar el sobreajuste (*overfitting*) a la trayectoria inicial desde el reposo, el método `reset` acepta el argumento `options={"randomize": True}`. Esto inicializa el episodio en un punto cinemático aleatorio pero seguro.
 4. **Cinemática del Viento y Estelas:** La actualización visual de las partículas de viento calcula su origen y destino basándose en el vector de desplazamiento real por cuadro ($dx, dy$), aplicando un factor de amplificación visual estático para que el flujo sea perfectamente visible incluso ante brisas de baja magnitud.
 5. **Fuente de Viento Configurable:** El entorno construye la perturbación automática desde `gym_wrapper/config.json` (`wind.enabled`, `wind.source`, `wind.default_pattern`, `wind.max_torque`). La lógica queda detrás de `WindSource`, por lo que una fuente aprendida puede reemplazar a `WindProcess` sin reescribir `env.step()`.
+6. **Referencia y Recompensa Configurables:** `theta_ref` se inicializa desde `control.theta_ref`, puede sobrescribirse por constructor o `reset(options={"theta_ref": ...})`, y la recompensa usa los pesos de `reward.tracking_error_weight`, `reward.velocity_weight` y `reward.control_weight`.
 
 ---
 
@@ -156,4 +157,4 @@ elif controller.current_mode == "RL":
 
 El script de entrenamiento para RL (`train_rl.py`) deberá desarrollarse de forma independiente y configurarse para operar en modo *headless* (sin renderizado gráfico) para maximizar la tasa de cuadros por segundo y acelerar la convergencia del entrenamiento por gradiente de política.
 
-El entorno ya acepta `theta_ref` por constructor o mediante `set_theta_ref(value)`, y reporta `theta_ref`, `tracking_error` y `abs_tracking_error` en `info`.
+El entorno ya acepta `theta_ref` por configuracion, constructor, `set_theta_ref(value)` o `reset(options={"theta_ref": value})`, y reporta `theta_ref`, `tracking_error` y `abs_tracking_error` en `info`.

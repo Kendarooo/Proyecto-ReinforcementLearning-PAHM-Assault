@@ -87,7 +87,7 @@ class LearnedPAHMODE(gym.Env):
                  wind_config: dict | None = None,
                  wind_seed: int | None = None,
                  randomize_wind_pattern: bool = False,
-                 theta_ref: float = 0.0,
+                 theta_ref: float | None = None,
                  reward_weights: dict | None = None,
                  config: dict | None = None,
                  wind_source: str | None = None):
@@ -100,6 +100,8 @@ class LearnedPAHMODE(gym.Env):
         self.device = "cpu" # CPU es preferible para inferencia paso a paso (baja latencia)
         wrapper_config = config or _load_wrapper_config()
         wind_settings = wrapper_config.get("wind", {})
+        control_settings = wrapper_config.get("control", {})
+        reward_settings = wrapper_config.get("reward", {})
         
         # Cargar Modelo ODE
         print(f"🔄 Cargando modelo ODE desde: {self.model_path}")
@@ -124,14 +126,29 @@ class LearnedPAHMODE(gym.Env):
         self.action_space = spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
 
         self.limit_rad = float(np.deg2rad(self.reset_angle_deg))
+        self.theta_ref_min = float(control_settings.get("theta_ref_min", -self.limit_rad))
+        self.theta_ref_max = float(control_settings.get("theta_ref_max", self.limit_rad))
+        if self.theta_ref_min > self.theta_ref_max:
+            raise ValueError("control.theta_ref_min cannot exceed control.theta_ref_max")
+
         self.theta_ref = 0.0
-        self.set_theta_ref(theta_ref)
-        default_reward_weights = {"error": 4.0, "velocity": 0.1, "action": 0.01}
-        self.reward_weights = {**default_reward_weights, **(reward_weights or {})}
+        configured_theta_ref = control_settings.get("theta_ref", 0.0)
+        self.set_theta_ref(configured_theta_ref if theta_ref is None else theta_ref)
+        self.reward_weights = self._build_reward_weights(
+            reward_settings=reward_settings,
+            overrides=reward_weights,
+        )
 
         # Observación: [ángulo, velocidad angular, ángulo objetivo]
-        high_obs = np.array([self.limit_rad, 10.0, self.limit_rad], dtype=np.float32)
-        self.observation_space = spaces.Box(low=-high_obs, high=high_obs, dtype=np.float32)
+        low_obs = np.array(
+            [-self.limit_rad, -10.0, self.theta_ref_min],
+            dtype=np.float32,
+        )
+        high_obs = np.array(
+            [self.limit_rad, 10.0, self.theta_ref_max],
+            dtype=np.float32,
+        )
+        self.observation_space = spaces.Box(low=low_obs, high=high_obs, dtype=np.float32)
 
         # Estado visual
         self.screen_dim = 500
@@ -199,15 +216,51 @@ class LearnedPAHMODE(gym.Env):
         self.wind_mag = mag
         self.wind_angle = angle
 
+    def _build_reward_weights(
+        self,
+        *,
+        reward_settings: dict,
+        overrides: dict | None,
+    ) -> dict:
+        """Normaliza pesos de recompensa desde config y overrides historicos."""
+        weights = {
+            "error": float(
+                reward_settings.get(
+                    "tracking_error_weight",
+                    reward_settings.get("error", 4.0),
+                )
+            ),
+            "velocity": float(
+                reward_settings.get(
+                    "velocity_weight",
+                    reward_settings.get("velocity", 0.1),
+                )
+            ),
+            "action": float(
+                reward_settings.get(
+                    "control_weight",
+                    reward_settings.get("action", 0.01),
+                )
+            ),
+        }
+        for key, value in (overrides or {}).items():
+            normalized_key = {
+                "tracking_error_weight": "error",
+                "velocity_weight": "velocity",
+                "control_weight": "action",
+            }.get(key, key)
+            weights[normalized_key] = float(value)
+        return weights
+
     def set_theta_ref(self, value: float) -> None:
         """Actualiza el ángulo objetivo usado por la observación y recompensa."""
         theta_ref = float(value)
         if not np.isfinite(theta_ref):
             raise ValueError("theta_ref must be finite")
-        limit_rad = float(np.deg2rad(self.reset_angle_deg))
-        if abs(theta_ref) > limit_rad:
+        if theta_ref < self.theta_ref_min or theta_ref > self.theta_ref_max:
             raise ValueError(
-                f"theta_ref={theta_ref} exceeds environment limit +/-{limit_rad}"
+                f"theta_ref={theta_ref} outside configured bounds "
+                f"[{self.theta_ref_min}, {self.theta_ref_max}]"
             )
         self.theta_ref = theta_ref
 
@@ -265,7 +318,7 @@ class LearnedPAHMODE(gym.Env):
         }
 
     def _tracking_info(self) -> dict:
-        error = float(self.theta_ref - self.state[0])
+        error = float(self.state[0] - self.theta_ref)
         return {
             "theta_ref": float(self.theta_ref),
             "tracking_error": error,
@@ -274,6 +327,14 @@ class LearnedPAHMODE(gym.Env):
 
     def _info(self) -> dict:
         return {**self._wind_info(), **self._tracking_info()}
+
+    def _tracking_reward(self, theta: float, theta_dot: float, action: float) -> float:
+        error = float(theta - self.theta_ref)
+        return -(
+            self.reward_weights["error"] * float(error ** 2)
+            + self.reward_weights["velocity"] * float(theta_dot ** 2)
+            + self.reward_weights["action"] * float(action ** 2)
+        )
 
     def step(self, action):
         self.last_action = action
@@ -325,11 +386,10 @@ class LearnedPAHMODE(gym.Env):
         # 5. Recompensa y Terminación
         terminated = bool(abs(angle_rad) > self.limit_rad)
         
-        error = self.theta_ref - angle_rad
-        reward = -(
-            self.reward_weights["error"] * float(error ** 2)
-            + self.reward_weights["velocity"] * float(vel_rad_s ** 2)
-            + self.reward_weights["action"] * float(u_val ** 2)
+        reward = self._tracking_reward(
+            theta=angle_rad,
+            theta_dot=vel_rad_s,
+            action=u_val,
         )
         
         obs = self._get_obs()

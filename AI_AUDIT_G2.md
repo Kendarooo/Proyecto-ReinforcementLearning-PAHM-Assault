@@ -40,10 +40,10 @@ Este documento registra el uso de modelos de lenguaje durante el trabajo del Gru
   - mantener `set_wind()` como mecanismo manual para la demo cuando `enable_wind=False`.
 - Creacion de pruebas en `tests/test_learned_pahm_env_wind.py` para el contrato de entorno con perturbaciones.
 - Implementacion del bloque `feature/etapa3-theta-ref-reward` para FR-13:
-  - `theta_ref` configurable por constructor, `set_theta_ref(value)` y `reset(options={"theta_ref": value})`;
+  - `theta_ref` configurable desde `gym_wrapper/config.json`, por constructor, `set_theta_ref(value)` y `reset(options={"theta_ref": value})`;
   - observacion expandida a `[theta, theta_dot, theta_ref]`;
   - `observation_space` actualizado a dimension 3;
-  - recompensa de seguimiento basada en error cuadratico, velocidad angular y esfuerzo de accion;
+  - recompensa de seguimiento basada en error cuadratico, velocidad angular y esfuerzo de accion, con pesos configurables;
   - reporte de `theta_ref`, `tracking_error` y `abs_tracking_error` en `info`;
   - sincronizacion de `theta_ref` con el slider de setpoint en la demo visual.
 - Ampliacion de `tests/test_learned_pahm_env_wind.py` para cubrir observacion 3D, cambio de recompensa al cambiar `theta_ref`, `reset(options={"randomize": True})` y compatibilidad entre viento automatico y referencia.

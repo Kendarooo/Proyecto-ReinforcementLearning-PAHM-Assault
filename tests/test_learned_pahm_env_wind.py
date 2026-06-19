@@ -42,6 +42,16 @@ def _wrapper_config_with_wind(enabled: bool) -> dict:
         "enabled": True,
         "reset_options": {"randomize": True},
     }
+    config["control"] = {
+        "theta_ref": 0.35,
+        "theta_ref_min": -1.0,
+        "theta_ref_max": 1.0,
+    }
+    config["reward"] = {
+        "tracking_error_weight": 2.5,
+        "velocity_weight": 0.2,
+        "control_weight": 0.03,
+    }
     return config
 
 
@@ -152,6 +162,65 @@ def test_env_can_disable_automatic_wind_from_external_config():
         env.close()
 
 
+def test_theta_ref_is_loaded_from_external_config():
+    config = _wrapper_config_with_wind(enabled=False)
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        config=config,
+    )
+    try:
+        obs, info = env.reset(seed=7)
+
+        assert np.isclose(env.theta_ref, 0.35)
+        assert np.isclose(obs[2], 0.35)
+        assert np.isclose(info["theta_ref"], 0.35)
+        assert env.observation_space.shape == (3,)
+        assert np.isclose(env.observation_space.low[2], -1.0)
+        assert np.isclose(env.observation_space.high[2], 1.0)
+    finally:
+        env.close()
+
+
+def test_reward_weights_are_loaded_from_external_config():
+    config = _wrapper_config_with_wind(enabled=False)
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        config=config,
+    )
+    try:
+        assert env.reward_weights == {"error": 2.5, "velocity": 0.2, "action": 0.03}
+    finally:
+        env.close()
+
+
+def test_reward_is_better_when_state_is_closer_to_configured_theta_ref():
+    config = _wrapper_config_with_wind(enabled=False)
+    config["control"]["theta_ref"] = 0.5
+    config["reward"] = {
+        "tracking_error_weight": 1.0,
+        "velocity_weight": 0.0,
+        "control_weight": 0.0,
+    }
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        config=config,
+    )
+    try:
+        env.reset(seed=1, options={"initial_state": [0.0, 0.0]})
+        close_reward = env._tracking_reward(theta=0.45, theta_dot=0.0, action=0.0)
+        far_reward = env._tracking_reward(theta=-0.5, theta_dot=0.0, action=0.0)
+
+        assert close_reward > far_reward
+    finally:
+        env.close()
+
+
 def test_manual_wind_still_works_when_automatic_wind_is_disabled():
     env = _make_env(enable_wind=False)
     try:
@@ -244,7 +313,7 @@ def test_set_theta_ref_updates_observation_and_info():
 
         assert np.isclose(obs[2], 0.75)
         assert np.isclose(info["theta_ref"], 0.75)
-        assert np.isclose(info["tracking_error"], 0.75 - obs[0])
+        assert np.isclose(info["tracking_error"], obs[0] - 0.75)
         assert np.isclose(info["abs_tracking_error"], abs(0.75 - obs[0]))
     finally:
         env.close()

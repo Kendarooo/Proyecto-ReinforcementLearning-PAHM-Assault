@@ -116,6 +116,16 @@
     "min_setpoint_deg": 0.0,
     "max_setpoint_deg": 170.0
   },
+  "control": {
+    "theta_ref": 0.0,
+    "theta_ref_min": -12.566370614359172,
+    "theta_ref_max": 12.566370614359172
+  },
+  "reward": {
+    "tracking_error_weight": 4.0,
+    "velocity_weight": 0.1,
+    "control_weight": 0.01
+  },
   "wind": {
     "enabled": false,
     "source": "wind_process",

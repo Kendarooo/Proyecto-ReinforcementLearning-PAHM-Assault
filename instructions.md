@@ -107,6 +107,16 @@ obs, reward, terminated, truncated, info = env.step([0.2])
 Tambien puede tomar la fuente automatica desde `gym_wrapper/config.json`:
 
 ```json
+"control": {
+  "theta_ref": 0.0,
+  "theta_ref_min": -12.566370614359172,
+  "theta_ref_max": 12.566370614359172
+},
+"reward": {
+  "tracking_error_weight": 4.0,
+  "velocity_weight": 0.1,
+  "control_weight": 0.01
+},
 "wind": {
   "enabled": false,
   "source": "wind_process",
@@ -133,7 +143,7 @@ Campos utiles en `info`:
 - `configured_wind_pattern`: patron configurado en el constructor.
 - `wind_automatic`: indica si manda `WindProcess`.
 - `theta_ref`: angulo objetivo actual.
-- `tracking_error`: `theta_ref - theta`.
+- `tracking_error`: `theta - theta_ref`.
 - `abs_tracking_error`: valor absoluto del error de seguimiento.
 
 Reglas importantes:
@@ -142,7 +152,8 @@ Reglas importantes:
 - Si `enable_wind` no se pasa al constructor, el entorno usa `wind.enabled` desde `config.json`.
 - `enable_wind=True` da prioridad a `WindProcess`; `set_wind()` queda para demo/manual cuando `enable_wind=False`.
 - La fuente automatica se construye mediante `WindSource`, lo que permite sustituir `WindProcess` por otra fuente futura sin cambiar el lazo principal del entorno.
-- `theta_ref` se puede configurar por constructor, por `set_theta_ref(value)` o por `reset(options={"theta_ref": value})`.
+- `theta_ref` se puede configurar en `config.json`, por constructor, por `set_theta_ref(value)` o por `reset(options={"theta_ref": value})`.
+- Los pesos de recompensa se leen de `reward.tracking_error_weight`, `reward.velocity_weight` y `reward.control_weight`.
 - `wind_seed` controla el RNG interno de `WindProcess`.
 - `reset(seed=...)` controla el RNG del entorno Gymnasium, incluyendo estado inicial y seleccion de patron cuando `randomize_wind_pattern=True`.
 
@@ -155,7 +166,7 @@ Tests especificos de este branch:
 Estado verificado:
 
 ```text
-13 passed
+16 passed
 ```
 
 ## 5. Etapa 1: exportar tau_w
