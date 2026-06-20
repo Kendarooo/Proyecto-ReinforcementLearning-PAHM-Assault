@@ -220,15 +220,3 @@ el mismo workspace, cada integrante registró sus corridas de DQN ahí):
 | `etapa-2-unsupervised` | Etapa 2 — Representación No Supervisada (Grupo 2) |
 | `pahm-rl-stage3` | Etapa 3 — Control Robusto RL (Grupo 2) |
 
-## 9. Validacion Final
-
-Checklist antes de entregar:
-
-- [ ] `ruff` pasa sin errores.
-- [ ] La suite completa de pruebas pasa.
-- [ ] Los tiempos de NFR-7 estan completos.
-- [ ] El hardware usado esta documentado.
-- [ ] Los modelos evaluados corresponden a las corridas finales.
-- [ ] El informe de evaluacion de controladores fue revisado.
-- [ ] Los enlaces o artefactos W&B finales estan registrados.
-- [ ] La conclusion sobre el controlador robusto esta respaldada por metricas.
