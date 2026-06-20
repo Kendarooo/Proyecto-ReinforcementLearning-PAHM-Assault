@@ -16,16 +16,16 @@ corridas finales.
 
 | Campo | Bryan | Alexandra | Kendall |
 | --- | --- | --- | --- |
-| Sistema operativo | CachyOS |  |  |
-| CPU | Core i5 |  |  |
-| RAM | 16 GB |  |  |
-| GPU | NVIDIA RTX 3050 |  |  |
-| VRAM | 6 GB |  |  |
-| Version de Python | 3.12.13 |  |  |
-| Version de PyTorch | 2.3.1+cu121 |  |  |
-| Version de Stable Baselines3 | No instalado |  |  |
-| Version de CUDA/cuDNN, si aplica | CUDA 12.1 & cuDNN 8902 |  |  |
-| Entorno virtual o gestor de dependencias | uv |  |  |
+| Sistema operativo | CachyOS |  | Ubunto 24.04 |
+| CPU | Core i5 |  | AMD Ryzen 7 7735HS |
+| RAM | 16 GB |  | 16 GB |
+| GPU | NVIDIA RTX 3050 |  | Radeon RX 7700S |
+| VRAM | 6 GB |  | 8 GB |
+| Version de Python | 3.12.13 |  | 3.12.13 |
+| Version de PyTorch | 2.3.1+cu121 |  | 2.3.1+cu121 |
+| Version de Stable Baselines3 | No instalado |  | 2.8.0 |
+| Version de CUDA/cuDNN, si aplica | CUDA 12.1 & cuDNN 8902 |  | ROCm |
+| Entorno virtual o gestor de dependencias | uv |  | uv |
 
 ## 3. NFR-7 - Tiempos de Ejecucion
 
