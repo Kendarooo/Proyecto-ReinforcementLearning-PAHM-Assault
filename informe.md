@@ -86,24 +86,106 @@ El estimador iguala/supera al baseline tal como exige el enunciado (sección 5.2
 
 ## 5. Etapa 2 - Representacion No Supervisada
 
-Completar con:
-
-- features extraidas de `tau_w(t)`;
-- criterio BIC para seleccion de componentes;
-- metricas ARI/NMI;
-- checkpoint GMM generado;
-- tiempo de entrenamiento.
+**Nota sobre dos implementaciones en el repositorio.** Existen dos carpetas con
+funcionalidad de Etapa 2: `etapa2_unsupervised/` (un autoencoder simple sobre
+ventanas de `tau_w(t)`, optimizando solo MSE de reconstrucción) y
+`pahm_stage2/` (un modelo de mezcla gaussiana — GMM — con selección de
+complejidad por BIC, validación sintético-real con ARI/NMI, y `WindSampler`
+como consumidor formal hacia Etapa 3). Según el propio `README.md` de
+`etapa2_unsupervised/`, **esa carpeta es un prototipo histórico descartado**
+y se conserva solo para trazabilidad; la entrega oficial de Etapa 2 es
+`pahm_stage2/`. Lo que sigue documenta la versión vigente (GMM + BIC).
+ 
+**Features extraídas de τ_w(t)** (`pahm_stage2/feature_extractor.py`):
+`mean`, `std`, `max_abs`, `skewness`, `smoothness` (media del cuadrado de la
+primera diferencia) y `energy` (media de los valores al cuadrado). Las
+señales de entrada tienen longitud variable; el extractor las reduce a un
+vector de tamaño fijo por trayectoria antes de pasarlas al GMM.
+ 
+**Criterio BIC para selección de componentes** (`pahm_stage2/unsupervised_model.py`,
+clase `GMMWindModel`): se entrenan modelos `GaussianMixture` (covarianza
+completa, `n_init=5`) para un rango de componentes configurable, y se
+selecciona el número de componentes con el BIC más bajo. Sobre los datos
+sintéticos generados con cuatro patrones de viento conocidos (`calm`, `gust`,
+`bias`, `turbulent`), los puntajes BIC obtenidos fueron:
+ 
+| Componentes | BIC |
+| ---: | ---: |
+| 2 | -3937.42 |
+| 3 | -5878.80 |
+| 4 | **-7243.61** |
+| 5 | -7236.33 |
+| 6 | -7150.94 |
+ 
+El BIC mínimo se alcanza en **4 componentes**, exactamente el número de
+patrones sintéticos inyectados — el criterio recupera la estructura correcta
+sin haber recibido las etiquetas. La curva muestra una caída pronunciada
+hasta 4 componentes y luego se aplana/empeora levemente, confirmando que no
+hay sobreajuste por agregar componentes adicionales.
+ 
+**Métricas ARI/NMI** (`pahm_stage2/validator.py`, validación sintético-real
+sobre los cuatro patrones conocidos):
+ 
+| Métrica | Valor |
+| --- | ---: |
+| ARI (Adjusted Rand Index) | 1.0 |
+| NMI (Normalized Mutual Information) | 1.0 |
+| Componentes seleccionados | 4 |
+ 
+Ambas métricas en 1.0 indican una recuperación perfecta de la partición
+verdadera sobre los datos sintéticos — condición necesaria, según el
+enunciado, antes de aplicar el mismo procedimiento de forma exploratoria
+sobre los datos reales de `tau_w(t)` (sin verdad de campo disponible).
+ 
+**Checkpoint GMM generado:** persistido vía `GMMWindModel.save()` en la ruta
+configurada en `configs/stage2_config.json` (`unsupervised.checkpoint_path`).
+El mismo checkpoint es consumido por `WindSampler.from_checkpoint()`
+(`pahm_stage2/wind_sampler.py`) para muestrear vectores de perturbación
+latente como fuente para Etapa 3 (FR-11).
 
 ## 6. Etapa 3 - Control Robusto RL
 
-Completar con:
-
-- configuracion de `theta_ref`;
-- observacion usada: `[theta, theta_dot, theta_ref, error_integral]`;
-- recompensa de seguimiento;
-- diferencia entre entrenamiento `naive` y `robust`;
-- uso de `stage2_sampler` como fuente de perturbaciones robustas;
-- tiempos de entrenamiento RL.
+**Algoritmo y configuración base** (`train_rl.py`, `DEFAULT_RL_TRAINING`):
+algoritmo `PPO` de Stable Baselines3 (también soporta `A2C` y `SAC` por
+configuración), `total_timesteps` y demás hiperparámetros leídos desde
+`rl_training` en el config externo. El entorno se construye sin renderizado
+(`render_mode=None`) mediante `LearnedPAHMODE`.
+ 
+**Diferencia entre entrenamiento `naive` y `robust`**
+(`DEFAULT_EXPERIMENTS` en `train_rl.py`):
+ 
+| Modo | `wind_enabled` | `wind_source` configurado por defecto |
+| --- | --- | --- |
+| `naive` | `False` | — (sin perturbaciones durante el entrenamiento) |
+| `robust` | `True` | `stage2_sampler` |
+ 
+El diseño original del modo `robust` apunta a usar el `WindSampler` del GMM
+de Etapa 2 (`wind_source="stage2_sampler"`) como fuente de perturbaciones
+durante el entrenamiento, cumpliendo FR-11 (la representación aprendida
+alimenta el controlador robusto). Cada modo es entrenado de forma
+independiente vía `train_from_config(config_path, mode=mode)`, con su propio
+nombre de modelo (`pahm_ppo_naive` / `pahm_ppo_robust`) y su propio registro
+en W&B (proyecto `pahm-rl-stage3`).
+ 
+**Evaluación cuantitativa — fuente de viento real usada.** El script
+`evaluate_controllers.py` (`make_evaluation_env`) construye el entorno de
+evaluación pasando únicamente `wind_pattern` (de `unseen_wind_patterns`:
+`gust`, `turbulent`) y **no** propaga `wind_source`. Por diseño, esto hace
+que la evaluación final de ambos controladores corra sobre perturbaciones de
+`WindProcess`, no del `WindSampler` de Etapa 2 — consistente con la columna
+`wind_source=wind_process` observada en `controller_metrics.csv` para todos
+los episodios de `naive` y `robust`. Es decir: la diferencia entre ambos
+controladores en la evaluación final proviene de cómo fue entrenado cada uno
+(sin perturbaciones vs. con perturbaciones activas), no de la fuente de
+viento usada al evaluarlos.
+ 
+**Observación y referencia.** El entorno `LearnedPAHMODE` expone
+`theta_ref` configurable (por config, constructor, `set_theta_ref()` o
+`reset(options={"theta_ref": ...})`) y reporta `theta_ref`, `tracking_error`
+y `abs_tracking_error` en `info`. La recompensa de seguimiento combina error
+cuadrático, velocidad angular y esfuerzo de acción con pesos configurables
+(`reward.tracking_error_weight`, `reward.velocity_weight`,
+`reward.control_weight`).
 
 ## 7. Comparacion de Controladores
 
