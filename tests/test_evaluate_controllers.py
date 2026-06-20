@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 
 from evaluate_controllers import (
+    build_comparison_analysis,
     compare_controllers,
     compute_overshoot,
     compute_settling_time,
@@ -42,8 +43,9 @@ class MockEvaluationEnv:
     render_mode = None
     dt = 0.1
 
-    def __init__(self, trajectory=None):
+    def __init__(self, trajectory=None, wind_pattern="gust"):
         self.trajectory = trajectory or [0.0, 0.4, 0.7, 1.05, 1.0, 1.0]
+        self.wind_pattern = wind_pattern
         self.index = 0
         self.actions = []
         self.closed = False
@@ -52,7 +54,12 @@ class MockEvaluationEnv:
         assert options and options.get("randomize") is True
         self.index = 0
         obs = np.array([self.trajectory[0], 0.0, 1.0], dtype=np.float32)
-        return obs, {"theta_ref": 1.0, "wind_torque": 0.0}
+        return obs, {
+            "theta_ref": 1.0,
+            "wind_torque": 0.0,
+            "wind_pattern": self.wind_pattern,
+            "wind_source": "wind_process",
+        }
 
     def step(self, action):
         self.actions.append(np.asarray(action, dtype=np.float32))
@@ -63,6 +70,8 @@ class MockEvaluationEnv:
             "theta_ref": 1.0,
             "tracking_error": theta - 1.0,
             "wind_torque": 0.3,
+            "wind_pattern": self.wind_pattern,
+            "wind_source": "wind_process",
         }
         terminated = self.index >= len(self.trajectory) - 1
         return obs, 1.0, terminated, False, info
@@ -144,7 +153,9 @@ def test_evaluate_controller_runs_headless_with_mock_policy():
     assert result["episodes"][0]["metrics"]["mse_tracking_error"] >= 0.0
     assert result["episodes"][0]["metrics"]["max_overshoot"] >= 0.0
     assert result["episodes"][0]["metrics"]["episode_return"] == 5.0
+    assert result["episodes"][0]["wind_pattern"] == "gust"
     assert result["episodes"][0]["trajectory"]["wind_torque"][-1] == 0.3
+    assert "gust" in result["summary_by_wind_pattern"]
     assert policy.predict_calls == 5
     assert policy.learn_called is False
     assert env.render_mode is None
@@ -152,7 +163,10 @@ def test_evaluate_controller_runs_headless_with_mock_policy():
 
 def test_compare_controllers_writes_results_for_naive_and_robust(tmp_path):
     config_path = tmp_path / "stage3_eval.json"
-    config_path.write_text(json.dumps(_config(tmp_path)), encoding="utf-8")
+    config = _config(tmp_path)
+    config["evaluation"]["num_episodes"] = 2
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    seen_episode_indexes = []
 
     policies = {
         "naive": MockPolicy(action=0.1),
@@ -162,17 +176,61 @@ def test_compare_controllers_writes_results_for_naive_and_robust(tmp_path):
     result = compare_controllers(
         config_path,
         policy_loader=lambda path, algorithm: policies[Path(path).stem.replace("pahm_ppo_", "")],
-        env_factory=lambda config, controller, episode_index: MockEvaluationEnv(),
+        env_factory=lambda config, controller, episode_index: (
+            seen_episode_indexes.append(episode_index)
+            or MockEvaluationEnv(
+                wind_pattern=config["evaluation"]["unseen_wind_patterns"][episode_index % 2]
+            )
+        ),
     )
 
     assert set(result["controllers"]) == {"naive", "robust"}
     assert set(result["summary"]) == {"naive", "robust"}
+    assert result["analysis"]["unseen_wind_patterns"] == ["gust", "turbulent"]
     metrics_path = Path(result["artifacts"]["metrics_path"])
+    report_path = Path(result["artifacts"]["report_path"])
     assert metrics_path.exists()
+    assert report_path.exists()
     saved = json.loads(metrics_path.read_text(encoding="utf-8"))
     assert set(saved["summary"]) == {"naive", "robust"}
+    report_text = report_path.read_text(encoding="utf-8")
+    assert "Tabla resumen naive vs robust" in report_text
+    assert "Perturbaciones no vistas: gust, turbulent" in report_text
+    assert "| MAE seguimiento |" in report_text
+    assert set(seen_episode_indexes) == {0, 1}
     assert policies["naive"].learn_called is False
     assert policies["robust"].learn_called is False
+
+
+def test_comparison_analysis_declares_robust_winner_when_metrics_improve():
+    payload = {
+        "controllers": ["naive", "robust"],
+        "summary": {
+            "naive": {
+                "mae_tracking_error": {"mean": 0.5},
+                "mse_tracking_error": {"mean": 0.4},
+                "settling_time": {"mean": 1.5},
+                "max_overshoot": {"mean": 0.3},
+                "episode_return": {"mean": 10.0},
+            },
+            "robust": {
+                "mae_tracking_error": {"mean": 0.2},
+                "mse_tracking_error": {"mean": 0.1},
+                "settling_time": {"mean": 0.8},
+                "max_overshoot": {"mean": 0.1},
+                "episode_return": {"mean": 12.0},
+            },
+        },
+    }
+
+    analysis = build_comparison_analysis(
+        payload,
+        {"unseen_wind_patterns": ["gust", "turbulent"]},
+    )
+
+    assert analysis["wins"]["candidate"] == 5
+    assert "robust" in analysis["conclusion"]
+    assert "superioridad global" in analysis["conclusion"]
 
 
 def test_compare_controllers_logs_evaluation_to_wandb_when_enabled(tmp_path):

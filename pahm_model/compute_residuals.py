@@ -32,8 +32,8 @@ if project_root not in sys.path:
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from dataloader import get_dataloaders
-from pahm_fast import PAHMFastModel
+from dataloader import get_dataloaders  # noqa: E402
+from pahm_fast import PAHMFastModel  # noqa: E402
 
 
 def main() -> None:
@@ -98,7 +98,6 @@ def main() -> None:
                 # angle_padded: (1, T, 1) — ángulo θ observado (normalizado)
                 pwm_padded = pwm_padded.to(device)
                 angle_padded = angle_padded.to(device)
-                seq_len = pwm_padded.shape[1]
 
                 # θ observado a lo largo de la trayectoria: (T,)
                 theta_obs = angle_padded[0, :, 0]

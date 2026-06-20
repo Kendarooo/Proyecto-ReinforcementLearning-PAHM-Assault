@@ -9,7 +9,6 @@ VERSIÓN: 2.1.0 (Auditado por Senior - Coherencia Física Inyectada)
 
 import os
 import sys
-import pytest
 import torch
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,7 +16,7 @@ project_root = os.path.abspath(os.path.join(current_dir, ".."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from pahm_model.rk4_integrator import TaylorWindIntegrator
+from pahm_model.rk4_integrator import TaylorWindIntegrator  # noqa: E402
 
 
 class DummyModel(torch.nn.Module):

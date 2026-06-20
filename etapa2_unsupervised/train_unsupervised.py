@@ -19,8 +19,8 @@ project_root = current_dir.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from etapa2_unsupervised.autoencoder import TauWAutoencoder
-from etapa2_unsupervised.tau_w_dataset import build_tau_w_dataloaders
+from etapa2_unsupervised.autoencoder import TauWAutoencoder  # noqa: E402
+from etapa2_unsupervised.tau_w_dataset import build_tau_w_dataloaders  # noqa: E402
 
 
 DEFAULT_STAGE2_CONFIG = {

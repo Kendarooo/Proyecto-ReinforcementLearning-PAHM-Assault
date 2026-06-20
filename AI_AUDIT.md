@@ -104,12 +104,12 @@ PASSED
 - Creación de pruebas en `tests/test_learned_pahm_env_wind.py` para el contrato de entorno con perturbaciones.
 - Implementación del bloque `feature/etapa3-theta-ref-reward` para FR-13:
   - `theta_ref` configurable desde `gym_wrapper/config.json`, por constructor, `set_theta_ref(value)` y `reset(options={"theta_ref": value})`;
-  - observación expandida a `[theta, theta_dot, theta_ref]`;
-  - `observation_space` actualizado a dimensión 3;
-  - recompensa de seguimiento basada en error cuadrático, velocidad angular y esfuerzo de acción, con pesos configurables;
-  - reporte de `theta_ref`, `tracking_error` y `abs_tracking_error` en `info`;
+  - observación expandida inicialmente a `[theta, theta_dot, theta_ref]` y luego enriquecida a `[theta, theta_dot, theta_ref, error_integral]`;
+  - `observation_space` actualizado para incluir la referencia y la integral del error como contexto adicional;
+  - recompensa de seguimiento basada en error cuadrático, integral del error, velocidad angular y esfuerzo de acción, con pesos configurables;
+  - reporte de `theta_ref`, `tracking_error`, `abs_tracking_error` y `error_integral` en `info`;
   - sincronización de `theta_ref` con el slider de setpoint en la demo visual.
-- Ampliación de `tests/test_learned_pahm_env_wind.py` para cubrir observación 3D, cambio de recompensa al cambiar `theta_ref`, `reset(options={"randomize": True})` y compatibilidad entre viento automático y referencia.
+- Ampliación de `tests/test_learned_pahm_env_wind.py` para cubrir observación con referencia/configuración de tracking, cambio de recompensa al cambiar `theta_ref`, `reset(options={"randomize": True})` y compatibilidad entre viento automático y referencia.
 - Implementación de `train_rl.py` como entrada headless independiente para entrenamiento con Stable Baselines3:
   - carga de `rl_training` desde configuración externa;
   - modos `naive` y `robust` para desactivar/activar perturbaciones;
@@ -127,13 +127,22 @@ PASSED
 - Evaluación cuantitativa headless de controladores:
   - script `evaluate_controllers.py` para cargar modelos ya entrenados y comparar `naive` vs `robust`;
   - métricas puras de MAE/MSE de seguimiento, tiempo de estabilización, sobreimpulso y recompensa acumulada;
-  - exportación de `controller_metrics.json` y `controller_metrics.csv`;
+  - evaluación por episodios ciclando sobre `evaluation.unseen_wind_patterns`;
+  - exportación de `controller_metrics.json`, `controller_metrics.csv` e `informe.md`;
+  - tabla resumen naive vs robust, desglose por perturbación, interpretación de métricas y conclusión automática sobre superioridad o no del controlador robusto;
   - pruebas con políticas y entornos mock en `tests/test_evaluate_controllers.py`.
 - Telemetría W&B de Etapa 3:
   - módulo `pahm_stage3/wandb_logger.py` para inicializar corridas, armar payloads de hiperparámetros/entorno, registrar métricas y artefactos;
   - integración en entrenamiento RL y evaluación cuantitativa con `mode=disabled` usable en pruebas;
   - controles `wandb.enabled`, `wandb.log_models` y `wandb.log_evaluation`;
   - pruebas con mocks en `tests/test_stage3_wandb_logger.py`.
+- Integración runtime de Etapa 2 como consumidor real de Etapa 3:
+  - nueva fuente `Stage2SamplerWindSource` en `gym_wrapper/wind_source.py`;
+  - soporte de `wind.source="stage2_sampler"` y `wind.stage2_sampler_checkpoint`;
+  - uso de `WindSampler.from_checkpoint()` para cargar el GMM no supervisado de Etapa 2;
+  - conversión explícita de features (`mean`, `std`, `max_abs`, `skewness`, `smoothness`, `energy`) a un torque suave acotado por `wind.max_torque`;
+  - configuración de `experiments.robust.wind_source="stage2_sampler"` para que el entrenamiento robusto consuma la representación aprendida;
+  - reporte de `wind_source` en `info` para depuración y evidencia experimental.
 
 ### Estrategias de prompting empleadas
 
@@ -164,10 +173,13 @@ PASSED
 - Se verificó la prioridad explícita entre viento automático (`enable_wind=True`) y viento manual (`set_wind()`).
 - Se verificó la reproducibilidad separando el RNG de Gymnasium (`reset(seed=...)`) del RNG de `WindProcess` (`wind_seed`).
 - Se verificó que el patrón configurado en el constructor no se muta cuando `randomize_wind_pattern=True`; el patrón sorteado queda en `active_wind_pattern`.
-- Se verificó que la observación del entorno tenga dimensión 3 y conserve `theta_ref`.
+- Se verificó que la observación del entorno conserve `theta_ref` y el contexto adicional de integral del error.
 - Se verificó que cambiar `theta_ref` modifica la recompensa de seguimiento.
 - Se verificó que `reset(options={"randomize": True})` sigue produciendo observaciones válidas con `theta_ref`.
 - Se verificó que el entorno con viento automático y `theta_ref` configurable avanza correctamente en modo headless.
+- Se verificó que `stage2_sampler` puede construirse desde configuración, cargar un checkpoint GMM y producir perturbaciones finitas.
+- Se verificó que `LearnedPAHMODE` puede ejecutar `reset()` y `step()` usando `stage2_sampler` como fuente automática de viento.
+- Se verificó que `train_rl.py` propaga `experiments.robust.wind_source` al entorno de entrenamiento.
 
 ### Comandos de verificación
 
@@ -182,14 +194,127 @@ PASSED
 Resultado registrado de la suite completa:
 
 ```text
-42 passed, 1 warning
+93 passed, 1 warning
 ```
 
 Resultado registrado para el contrato específico del entorno con perturbaciones:
 
 ```text
-9 passed, 1 warning
+22 passed, 1 warning
 ```
+
+### Cierre final registrado de Etapa 3
+
+#### Corrección de calidad estática (`ruff`)
+
+- Se revisaron y corrigieron bloqueos de NFR-5 asociados a estilo y errores estáticos:
+  - imports no usados;
+  - `if` compactos en una sola línea;
+  - `except` desnudos;
+  - f-string sin placeholders;
+  - detalles menores detectados durante los refactors de evaluación y fuentes de viento.
+- Los archivos tocados incluyeron principalmente `gym_wrapper/pahm_ui.py`, `gym_wrapper/test_pahm_env.py`, `pahm_model/pahm_ode.py`, `train_rl.py`, `evaluate_controllers.py`, `gym_wrapper/wind_source.py` y pruebas asociadas.
+- Verificación registrada:
+
+```bash
+.venv/bin/ruff check train_rl.py evaluate_controllers.py gym_wrapper pahm_stage3 pahm_stage2 tests
+```
+
+Resultado:
+
+```text
+All checks passed!
+```
+
+#### Entrenamiento con Stable Baselines3
+
+- Se implementó y documentó `train_rl.py` como punto de entrada headless para entrenamiento con Stable Baselines3.
+- La configuración RL quedó centralizada en `gym_wrapper/config.json` y `configs/stage3_config.json`.
+- Se agregó `seed = 42` a la configuración de RL y se propaga a:
+  - construcción del agente SB3 (`seed=...`);
+  - `env.reset(seed=..., options={"randomize": True})`.
+- El modo `naive` desactiva viento y el modo `robust` activa perturbaciones con `wind_source="stage2_sampler"`, conectando Etapa 2 con Etapa 3.
+- Comandos preparados para la corrida final:
+
+```bash
+.venv/bin/python train_rl.py --config gym_wrapper/config.json --mode naive
+.venv/bin/python train_rl.py --config gym_wrapper/config.json --mode robust
+.venv/bin/python train_rl.py --config gym_wrapper/config.json --mode all
+```
+
+- Artefactos esperados:
+  - `artifacts/stage3/models/pahm_ppo_naive.zip`;
+  - `artifacts/stage3/models/pahm_ppo_robust.zip`;
+  - checkpoints periódicos según `checkpoint_freq`;
+  - logs TensorBoard/W&B según configuración.
+
+#### Evaluación final de controladores
+
+- Se fortaleció `evaluate_controllers.py` para producir evidencia defendible de comparación entre `naive` y `robust`.
+- La evaluación:
+  - corre en modo headless;
+  - carga modelos entrenados sin reentrenar;
+  - cicla episodios sobre `evaluation.unseen_wind_patterns`;
+  - reporta MAE, MSE, tiempo de estabilización, sobreimpulso y retorno acumulado;
+  - separa resumen global y resumen por perturbación;
+  - genera conclusión explícita sobre si `robust` supera o no a `naive`.
+- Comando de evaluación final:
+
+```bash
+.venv/bin/python evaluate_controllers.py --config configs/stage3_config.json
+```
+
+- Artefactos esperados:
+  - `artifacts/stage3/evaluation/controller_metrics.json`;
+  - `artifacts/stage3/evaluation/controller_metrics.csv`;
+  - `artifacts/stage3/evaluation/informe.md`.
+
+#### Weights & Biases
+
+- Se centralizó la telemetría de Etapa 3 en `pahm_stage3/wandb_logger.py`.
+- Se integró W&B en:
+  - entrenamiento RL (`train_rl.py`);
+  - evaluación de controladores (`evaluate_controllers.py`).
+- La configuración permite activar o desactivar W&B sin cambiar código:
+  - `wandb.enabled`;
+  - `wandb.mode`;
+  - `wandb.log_models`;
+  - `wandb.log_evaluation`.
+- En pruebas se usaron mocks y `mode=disabled` para verificar el contrato sin depender de conectividad externa.
+- Para entrega/presentación, el equipo debe confirmar manualmente en W&B que las corridas finales contienen:
+  - hiperparámetros de entrenamiento;
+  - modo (`naive` o `robust`);
+  - fuente de viento;
+  - métricas de entrenamiento;
+  - artefactos de modelos;
+  - artefactos de evaluación JSON/CSV/Markdown.
+
+#### Validación humana final
+
+- El equipo humano debe realizar la aceptación final de los resultados, no solo de la ejecución de pruebas.
+- Lista mínima de validación final:
+  - confirmar que `ruff` pasa sin errores;
+  - confirmar que la suite completa pasa;
+  - confirmar que los modelos `naive` y `robust` fueron entrenados con la configuración final;
+  - confirmar que los checkpoints/modelos usados en evaluación corresponden a esas corridas finales;
+  - revisar `artifacts/stage3/evaluation/informe.md` y verificar que la conclusión automática coincide con los números;
+  - revisar que W&B contenga las corridas y artefactos esperados;
+  - completar la tabla NFR-7 de `informe.md` con tiempos reales y hardware usado;
+  - documentar en el informe del curso si el controlador robusto fue superior, equivalente o inferior al naive, usando la tabla y las métricas exportadas.
+
+#### NFR-7: tiempos y hardware
+
+- Se agregó `informe.md` como base estructurada del informe final.
+- La sección NFR-7 incluye campos para registrar:
+  - entrenamiento del estimador;
+  - inferencia del estimador / exportación de `tau_w(t)`;
+  - entrenamiento no supervisado Stage 2;
+  - entrenamiento RL `naive`;
+  - entrenamiento RL `robust`;
+  - evaluación de controladores;
+  - hardware usado.
+- Los campos de hardware quedan intencionalmente en blanco para que sean completados por la persona que ejecutó las corridas finales.
+- No se registran tiempos inventados en esta auditoría; los valores finales deben provenir de ejecuciones reales, idealmente medidas con `/usr/bin/time -v` o logs equivalentes de W&B/TensorBoard.
 
 ### Recomendaciones técnicas de Grupo 2 hacia el repositorio
 

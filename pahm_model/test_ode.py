@@ -43,14 +43,14 @@ def test_ode():
         arch = checkpoint.get('architecture', 'ode') # Default a 'ode'
         
         if arch == 'fast':
-            print(f"⚡ Detectado modelo FAST (RK4)")
+            print("⚡ Detectado modelo FAST (RK4)")
             model = PAHMFastModel(device=device, dt=args.dt)
         else:
-            print(f"🧠 Detectado modelo ODE (torchdiffeq)")
+            print("🧠 Detectado modelo ODE (torchdiffeq)")
             model = PAHMHybridODE(device=device)
         
         phys_params = model.load_model(args.model_path)
-        print(f"✅ Modelo cargado. Parámetros físicos aprendidos:")
+        print("✅ Modelo cargado. Parámetros físicos aprendidos:")
         for k, v in phys_params.items():
             print(f"   - {k}: {v:.4f}")
     except Exception as e:
@@ -103,7 +103,8 @@ def test_ode():
             all_gt.append(theta_gt)
             all_u.append(u_vals)
             
-            if i >= 5: break # Solo graficar las primeras 5 para no saturar
+            if i >= 5:
+                break # Solo graficar las primeras 5 para no saturar
             
     print(f"MSE Promedio en Test: {np.mean(mse_list):.6f}")
     

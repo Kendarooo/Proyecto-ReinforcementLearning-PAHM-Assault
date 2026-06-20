@@ -130,7 +130,7 @@ Tambien puede tomar la fuente automatica desde `gym_wrapper/config.json`:
 La observacion del entorno para Etapa 3 es:
 
 ```text
-[theta, theta_dot, theta_ref]
+[theta, theta_dot, theta_ref, error_integral]
 ```
 
 Campos utiles en `info`:
@@ -141,20 +141,22 @@ Campos utiles en `info`:
 - `wind_torque`
 - `wind_pattern`: patron activo del episodio.
 - `configured_wind_pattern`: patron configurado en el constructor.
-- `wind_automatic`: indica si manda `WindProcess`.
+- `wind_source`: fuente activa (`wind_process`, `stage2_sampler` o `none`).
+- `wind_automatic`: indica si manda una fuente automatica de viento.
 - `theta_ref`: angulo objetivo actual.
 - `tracking_error`: `theta - theta_ref`.
 - `abs_tracking_error`: valor absoluto del error de seguimiento.
+- `error_integral`: integral acotada del error de seguimiento.
 
 Reglas importantes:
 
 - `render_mode=None` no requiere Pygame durante el import ni durante entrenamiento headless.
 - Si `enable_wind` no se pasa al constructor, el entorno usa `wind.enabled` desde `config.json`.
-- `enable_wind=True` da prioridad a `WindProcess`; `set_wind()` queda para demo/manual cuando `enable_wind=False`.
-- La fuente automatica se construye mediante `WindSource`, lo que permite sustituir `WindProcess` por otra fuente futura sin cambiar el lazo principal del entorno.
+- `enable_wind=True` da prioridad a la fuente automatica configurada; `set_wind()` queda para demo/manual cuando `enable_wind=False`.
+- La fuente automatica se construye mediante `WindSource`. `wind.source="wind_process"` usa patrones procedurales y `wind.source="stage2_sampler"` carga el GMM de Etapa 2 mediante `WindSampler`.
 - `theta_ref` se puede configurar en `config.json`, por constructor, por `set_theta_ref(value)` o por `reset(options={"theta_ref": value})`.
-- Los pesos de recompensa se leen de `reward.tracking_error_weight`, `reward.velocity_weight` y `reward.control_weight`.
-- `wind_seed` controla el RNG interno de `WindProcess`.
+- Los pesos de recompensa se leen de `reward.tracking_error_weight`, `reward.integral_weight`, `reward.velocity_weight` y `reward.control_weight`.
+- `wind_seed` controla el RNG interno de la fuente automatica cuando aplica.
 - `reset(seed=...)` controla el RNG del entorno Gymnasium, incluyendo estado inicial y seleccion de patron cuando `randomize_wind_pattern=True`.
 
 Tests especificos de este branch:
@@ -188,14 +190,9 @@ outputs/tau_w/estimador_wind.pth
 
 ## 6. Etapa 2: entrenamiento no supervisado
 
-Ruta historica con autoencoder:
+La ruta vigente y defendible de Etapa 2 es `pahm_stage2/`, porque implementa GMM con seleccion por BIC, validacion sintetico-real con ARI/NMI y `WindSampler` para consumo posterior. La carpeta `etapa2_unsupervised/` se conserva solo como prototipo historico de autoencoder simple.
 
-```bash
-.venv/bin/python etapa2_unsupervised/train_unsupervised.py \
-  --config gym_wrapper/config.json
-```
-
-Ruta G2 con GMM, BIC y validacion sintético-real:
+Validar estructura sintetica con patrones conocidos:
 
 ```bash
 .venv/bin/python -m pahm_stage2.validate_synthetic_real \
@@ -209,9 +206,18 @@ Entrenar GMM desde un manifiesto de `tau_w`:
   --config configs/stage2_config.json
 ```
 
+Ruta historica/experimental con autoencoder simple:
+
+```bash
+.venv/bin/python etapa2_unsupervised/train_unsupervised.py \
+  --config gym_wrapper/config.json
+```
+
 ## 7. Estado para Etapa 3
 
 Etapa 1, Etapa 2 y los bloques actuales de Etapa 3 para entorno con perturbaciones, `theta_ref` configurable, recompensa de seguimiento y entrenamiento RL headless pasan las pruebas actuales.
+
+La conexion Etapa 2 -> Etapa 3 ya puede ejecutarse en runtime: `experiments.robust.wind_source` usa `stage2_sampler`, que carga `wind.stage2_sampler_checkpoint` y convierte las features muestreadas por el GMM en un torque suave, acotado por `wind.max_torque`, consumido directamente por `LearnedPAHMODE`.
 
 Entrenamiento RL headless:
 
@@ -224,6 +230,7 @@ La seccion `rl_training` de `gym_wrapper/config.json` controla:
 
 - `mode`: `naive` desactiva viento; `robust` activa perturbaciones.
 - `algorithm`: `PPO`, `A2C` o `SAC`.
+- `seed`: semilla pasada a Stable Baselines3 y al `reset` inicial del entorno.
 - `total_timesteps`, `learning_rate`, `gamma`, `n_steps`, `batch_size`.
 - `model_output_dir`, `checkpoint_freq` y `log_dir`.
 
@@ -232,6 +239,7 @@ La seccion `experiments` define los modos a ejecutar y sus nombres de modelo:
 - `experiments.modes`: lista de modos, por ejemplo `["naive", "robust"]`.
 - `experiments.naive.model_name`: `pahm_ppo_naive`.
 - `experiments.robust.model_name`: `pahm_ppo_robust`.
+- `experiments.robust.wind_source`: `stage2_sampler` para entrenamiento robusto con el consumidor aprendido de Etapa 2.
 
 La seccion `wandb` permite registrar hiperparametros, modo, ruta del modelo, metricas de entrenamiento/evaluacion y artefactos. Para pruebas puede mantenerse con `enabled=false` o `mode=disabled`; `log_models` y `log_evaluation` controlan artefactos de modelos y reportes.
 
@@ -252,15 +260,16 @@ Evaluacion cuantitativa headless:
 .venv/bin/python evaluate_controllers.py --config configs/stage3_config.json
 ```
 
-La seccion `evaluation` define controladores, rutas de modelos, episodios, pasos maximos, patrones de viento no vistos y tolerancias. El script guarda `controller_metrics.json` y `controller_metrics.csv` con MAE/MSE de seguimiento, tiempo de estabilizacion, sobreimpulso y recompensa acumulada. Si `wandb.enabled=true` y `wandb.log_evaluation=true`, tambien registra el resumen comparativo y los artefactos de metricas.
+La seccion `evaluation` define controladores, rutas de modelos, episodios, pasos maximos, patrones de viento no vistos y tolerancias. El script cicla episodios sobre `evaluation.unseen_wind_patterns` y guarda `controller_metrics.json`, `controller_metrics.csv` e `informe.md` con tabla naive vs robust, desglose por perturbacion, interpretacion de MAE/MSE/tiempo de estabilizacion/sobreimpulso/retorno y conclusion sobre la superioridad o no del controlador robusto. Si `wandb.enabled=true` y `wandb.log_evaluation=true`, tambien registra el resumen comparativo y los artefactos de metricas.
 
 Para continuar con Etapa 3B falta:
 
 - entrenar formalmente agentes naive y robusto con corridas largas;
 - preparar las figuras y tablas finales para el PDF usando las metricas exportadas/W&B.
+- completar `informe.md`, especialmente la tabla NFR-7 con tiempos de entrenamiento/inferencia/evaluacion y hardware usado.
 
 Estado verificado de la suite completa:
 
 ```text
-95 passed, 1 skipped, 16 warnings
+93 passed, 1 warning
 ```

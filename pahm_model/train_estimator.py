@@ -38,10 +38,10 @@ if project_root not in sys.path:
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from sequence_estimator import WindSequenceEstimator
-from custom_loss import PAHMProjectLoss
-from dataloader import get_dataloaders
-from pahm_fast import PAHMFastModel
+from sequence_estimator import WindSequenceEstimator  # noqa: E402
+from custom_loss import PAHMProjectLoss  # noqa: E402
+from dataloader import get_dataloaders  # noqa: E402
+from pahm_fast import PAHMFastModel  # noqa: E402
 
 
 class PAHMTrainer:

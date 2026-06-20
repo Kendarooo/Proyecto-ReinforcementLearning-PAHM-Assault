@@ -65,7 +65,8 @@ class VBox(UIElement):
         current_y = 0
         max_w = 0
         for child in self.children:
-            if not child.visible: continue
+            if not child.visible:
+                continue
             child.set_pos(self.rect.x, self.rect.y + current_y)
             current_y += child.rect.height + self.spacing
             max_w = max(max_w, child.rect.width)
@@ -78,7 +79,8 @@ class VBox(UIElement):
 
     def draw(self, screen, font_dict):
         for child in self.children:
-            if child.visible: child.draw(screen, font_dict)
+            if child.visible:
+                child.draw(screen, font_dict)
 
     def handle_event(self, event):
         handled = False
@@ -89,7 +91,8 @@ class VBox(UIElement):
 
     def update(self, mouse_pos):
         for child in self.children:
-            if child.visible: child.update(mouse_pos)
+            if child.visible:
+                child.update(mouse_pos)
 
 class HBox(UIElement):
     """Contenedor horizontal. Análogo a VBox para colocar elementos en fila
@@ -104,7 +107,8 @@ class HBox(UIElement):
         current_x = 0
         max_h = 0
         for child in self.children:
-            if not child.visible: continue
+            if not child.visible:
+                continue
             child.set_pos(self.rect.x + current_x, self.rect.y)
             current_x += child.rect.width + self.spacing
             max_h = max(max_h, child.rect.height)
@@ -117,7 +121,8 @@ class HBox(UIElement):
 
     def draw(self, screen, font_dict):
         for child in self.children:
-            if child.visible: child.draw(screen, font_dict)
+            if child.visible:
+                child.draw(screen, font_dict)
 
     def handle_event(self, event):
         handled = False
@@ -128,7 +133,8 @@ class HBox(UIElement):
 
     def update(self, mouse_pos):
         for child in self.children:
-            if child.visible: child.update(mouse_pos)
+            if child.visible:
+                child.update(mouse_pos)
 
 class TextLabel(UIElement):
     def __init__(self, text, font_type='default'):
@@ -321,15 +327,19 @@ class Oscilloscope(UIElement):
         valid_out = [v for v in self.output_data if np.isfinite(v)]
         if valid_out:
             c_min, c_max = min(valid_out), max(valid_out)
-            if c_min < self.output_min: self.output_min = c_min - 0.1
-            if c_max > self.output_max: self.output_max = c_max + 0.1
+            if c_min < self.output_min:
+                self.output_min = c_min - 0.1
+            if c_max > self.output_max:
+                self.output_max = c_max + 0.1
 
     def _draw_signal(self, screen, data, min_v, max_v, color):
-        if len(data) < 2: return
+        if len(data) < 2:
+            return
         pts = []
         denom = max_v - min_v if max_v != min_v else 1.0
         for i, v in enumerate(data):
-            if not np.isfinite(v): continue
+            if not np.isfinite(v):
+                continue
             x = self.rect.x + (i * self.rect.width // self.max_samples)
             y = self.rect.bottom - ((v - min_v)/denom * self.rect.height)
             pts.append((float(x), float(y)))
@@ -447,14 +457,22 @@ class PAHMController:
         self.step_counter += 1
         mode = self.current_mode
         
-        if mode == "Off": act = 0.0
-        elif mode == "Step": act = 0.2
-        elif mode == "Sine": act = 0.25 * (1 + np.sin(self.step_counter * 2 * np.pi / 150)) / 2
-        elif mode == "Random": act = np.random.rand() * 0.25
-        elif mode == "Manual": act = self.slider_pwm.val
-        elif mode == "PID": act = pid_action
-        elif mode == "RL": act = rl_agent_action
-        else: act = 0.0
+        if mode == "Off":
+            act = 0.0
+        elif mode == "Step":
+            act = 0.2
+        elif mode == "Sine":
+            act = 0.25 * (1 + np.sin(self.step_counter * 2 * np.pi / 150)) / 2
+        elif mode == "Random":
+            act = np.random.rand() * 0.25
+        elif mode == "Manual":
+            act = self.slider_pwm.val
+        elif mode == "PID":
+            act = pid_action
+        elif mode == "RL":
+            act = rl_agent_action
+        else:
+            act = 0.0
         
         # Saturación de seguridad
         self.last_action = np.clip(act, 0.0, 1.0)

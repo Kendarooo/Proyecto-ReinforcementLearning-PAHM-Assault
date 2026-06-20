@@ -24,10 +24,14 @@ MODEL_PATH = PROJECT_ROOT / "pahm_model" / "pahm_fast_v2_best.pth"
 
 def _write_config(tmp_path: Path, *, mode: str = "naive", total_timesteps: int = 10) -> Path:
     config = copy.deepcopy(_load_wrapper_config())
+    config["wind"]["stage2_sampler_checkpoint"] = str(
+        PROJECT_ROOT / "artifacts" / "stage2" / "gmm_wind_model.pkl"
+    )
     config["rl_training"] = {
         "enabled": True,
         "mode": mode,
         "algorithm": "PPO",
+        "seed": 42,
         "total_timesteps": total_timesteps,
         "learning_rate": 0.0003,
         "gamma": 0.99,
@@ -51,6 +55,7 @@ def _write_config(tmp_path: Path, *, mode: str = "naive", total_timesteps: int =
         },
         "robust": {
             "wind_enabled": True,
+            "wind_source": "stage2_sampler",
             "model_name": "pahm_ppo_robust",
         },
     }
@@ -82,6 +87,19 @@ class FakeAgent:
         self.saved_paths.append(model_path)
 
 
+class FakeTrainingEnv:
+    def __init__(self):
+        self.reset_calls = []
+        self.closed = False
+
+    def reset(self, *, seed=None, options=None):
+        self.reset_calls.append({"seed": seed, "options": options})
+        return np.zeros(4, dtype=np.float32), {}
+
+    def close(self):
+        self.closed = True
+
+
 def test_rl_training_config_loads_from_external_file(tmp_path):
     config_path = _write_config(tmp_path, mode="naive")
 
@@ -89,6 +107,7 @@ def test_rl_training_config_loads_from_external_file(tmp_path):
 
     assert config["rl_training"]["mode"] == "naive"
     assert config["rl_training"]["algorithm"] == "PPO"
+    assert config["rl_training"]["seed"] == 42
     assert config["rl_training"]["render"] is False
 
 
@@ -98,6 +117,7 @@ def test_config_defines_naive_and_robust_experiment_modes(tmp_path):
     assert config["experiments"]["modes"] == ["naive", "robust"]
     assert config["experiments"]["naive"]["wind_enabled"] is False
     assert config["experiments"]["robust"]["wind_enabled"] is True
+    assert config["experiments"]["robust"]["wind_source"] == "stage2_sampler"
 
 
 def test_make_training_env_is_headless_and_resets_with_randomize(tmp_path):
@@ -163,6 +183,38 @@ def test_train_all_modes_saves_one_model_per_configured_mode(tmp_path, monkeypat
     assert Path(model_paths["robust"]).name == "pahm_ppo_robust.zip"
     assert Path(model_paths["naive"]).exists()
     assert Path(model_paths["robust"]).exists()
+
+
+def test_build_agent_passes_configured_seed_to_sb3(tmp_path, monkeypatch):
+    captured_kwargs = {}
+
+    class FakePPO:
+        def __init__(self, **kwargs):
+            captured_kwargs.update(kwargs)
+
+    fake_module = SimpleNamespace(PPO=FakePPO, A2C=FakePPO, SAC=FakePPO)
+    monkeypatch.setitem(sys.modules, "stable_baselines3", fake_module)
+
+    config = load_config(_write_config(tmp_path, mode="naive"))
+    env = object()
+
+    build_agent(config["rl_training"]["algorithm"], env, config)
+
+    assert captured_kwargs["seed"] == 42
+    assert captured_kwargs["env"] is env
+
+
+def test_train_from_config_resets_env_with_configured_seed(tmp_path, monkeypatch):
+    fake_env = FakeTrainingEnv()
+    monkeypatch.setattr("train_rl.make_training_env", lambda config: fake_env)
+    monkeypatch.setattr("train_rl.build_agent", lambda *args, **kwargs: FakeAgent())
+    config_path = _write_config(tmp_path, mode="naive", total_timesteps=1)
+
+    train_from_config(config_path)
+
+    assert fake_env.reset_calls[0]["seed"] == 42
+    assert fake_env.reset_calls[0]["options"] == {"randomize": True}
+    assert fake_env.closed is True
 
 
 def test_wandb_mock_receives_saved_model_path(tmp_path, monkeypatch):

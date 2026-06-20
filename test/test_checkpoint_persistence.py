@@ -12,7 +12,6 @@ AUDITORÍA: Alexandra, Bryan, Katherine, Kendall
 import os
 import sys
 import shutil
-import pytest
 import torch
 import torch.optim as optim
 

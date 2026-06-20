@@ -7,7 +7,6 @@
 
 # Contiene contribuciones de Claude y Gemini
 
-import gymnasium as gym
 from gymnasium.wrappers import TimeLimit
 import numpy as np
 import pygame
@@ -81,7 +80,7 @@ Ejemplos de uso:
     args = parser.parse_args()
     
     # Mostrar configuración
-    print(f"🤖 Configuración:")
+    print("🤖 Configuración:")
     print(f"   - Modelo: {args.model}")
     print(f"   - Ángulo de reset: {args.reset_angle}°")
     print(f"   - Máximo pasos por episodio: {args.max_steps}")
@@ -206,7 +205,7 @@ Ejemplos de uso:
         # Backup en caso de que el signal handler no funcione
         print("\n🛑 KeyboardInterrupt detectado. Cerrando...")
 
-    except Exception as e:  # <--- Agrega esto antes del finally
+    except Exception:
         import traceback
         traceback.print_exc()
         
@@ -215,11 +214,11 @@ Ejemplos de uso:
         print("🧹 Limpiando recursos...")
         try:
             env.close()
-        except:
+        except Exception:
             pass
         try:
             pygame.quit()
-        except:
+        except Exception:
             pass
         print("✅ Programa terminado correctamente.")
         sys.exit(0)

@@ -69,7 +69,7 @@ El código está organizado siguiendo principios de diseño limpio, separación 
 ├── pahm_stage3/                    # Etapa 3 — Telemetría de Control Robusto (RL)
 │   └── wandb_logger.py                # Logger centralizado de W&B para entrenamiento/evaluación
 │
-├── etapa2_unsupervised/            # (Legado/duplicado de pahm_stage2 — ver nota abajo)
+├── etapa2_unsupervised/            # Legado experimental: autoencoder simple, no ruta oficial
 │   ├── autoencoder.py
 │   ├── tau_w_dataset.py
 │   └── train_unsupervised.py
@@ -118,9 +118,11 @@ El código está organizado siguiendo principios de diseño limpio, separación 
 └── README.md
 ```
 
-> **Nota:** `etapa2_unsupervised/` y `pahm_stage2/` contienen funcionalidad solapada para la Etapa 2. Antes de la entrega final hay que confirmar cuál es la versión vigente y eliminar la que quede obsoleta para evitar ambigüedad en la revisión de código.
+> **Nota:** La implementación vigente y defendible de Etapa 2 es `pahm_stage2/` porque cubre GMM, selección por BIC, validación sintético-real con ARI/NMI y `WindSampler`. `etapa2_unsupervised/` se conserva solo como prototipo histórico de autoencoder simple para trazabilidad y pruebas heredadas; no es la ruta recomendada para entrega.
 
-> **Nota:** `AI_AUDIT.md` (Grupo 1) y `AI_AUDIT_G2.md` (Grupo 2) deben fusionarse en un único `AI_AUDIT.md` antes de la entrega final, conforme a CON-4 ("el repositorio deberá incluir **un** archivo AI_AUDIT.md"). Pendiente de trabajar en una sesión posterior.
+> **Nota:** La auditoría de uso de IA está consolidada en `AI_AUDIT.md`, conforme a CON-4.
+
+> **Nota:** La base estructurada para el informe final vive en `informe.md`. Incluye la tabla NFR-7 para registrar tiempos de entrenamiento/inferencia/evaluación y hardware usado en las corridas finales.
 
 ---
 
@@ -239,13 +241,25 @@ python train_pid.py --model_path ../pahm_model/pahm_ode_best.pth --output gym_wr
 
 ### E. Conexión Etapa 1 → Etapa 2 no supervisada
 
-La Etapa 1 produce su artefacto formal de salida en el Paso 4 de la sección B (`python pahm_model/export_tau_w.py`), que escribe una señal por trayectoria en `outputs/tau_w/tau_w_<split>_<idx>.npy`. La Etapa 2 consume directamente ese mismo directorio mediante `stage2_unsupervised.tau_w_input_dir` en `gym_wrapper/config.json`.
+La Etapa 1 produce su artefacto formal de salida en el Paso 4 de la sección B (`python pahm_model/export_tau_w.py`), que escribe una señal por trayectoria en `outputs/tau_w/tau_w_<split>_<idx>.npy` y copia el checkpoint del estimador como `outputs/tau_w/estimador_wind.pth`.
 
 ```bash
-python3 etapa2_unsupervised/train_unsupervised.py --config gym_wrapper/config.json
+.venv/bin/python pahm_model/export_tau_w.py
 ```
 
-El entrenamiento de Etapa 2 es no supervisado: el dataloader entrega únicamente ventanas de `tau_w(t)`, sin etiquetas, y el autoencoder optimiza solo error de reconstrucción `MSE(reconstrucción, entrada)`.
+La ruta vigente de Etapa 2 es `pahm_stage2/`. Primero valida la estructura sintética con patrones conocidos y luego entrena el modelo GMM productivo desde el manifiesto de señales reales:
+
+```bash
+.venv/bin/python -m pahm_stage2.validate_synthetic_real \
+  --config configs/stage2_config.json
+
+.venv/bin/python -m pahm_stage2.train_unsupervised \
+  --config configs/stage2_config.json
+```
+
+Esta ruta extrae features de `tau_w(t)`, selecciona complejidad mediante BIC, valida recuperación de estructura con ARI/NMI y guarda `artifacts/stage2/gmm_wind_model.pkl`, consumible mediante `pahm_stage2.wind_sampler.WindSampler`.
+
+La carpeta `etapa2_unsupervised/` contiene un autoencoder simple usado como prototipo temprano. Se mantiene para trazabilidad y pruebas heredadas, pero no debe presentarse como implementación principal de FR-9 a FR-11.
 
 Para registrar Etapa 2 en Weights & Biases, primero autentica la sesión:
 
@@ -253,7 +267,7 @@ Para registrar Etapa 2 en Weights & Biases, primero autentica la sesión:
 wandb login
 ```
 
-Luego activa `stage2_unsupervised.wandb.enabled` en `gym_wrapper/config.json`. Por defecto el proyecto W&B de Etapa 2 es `etapa-2-unsupervised`; Etapa 1 usa el proyecto `etapa-1` desde `pahm_model/train_estimator.py`.
+Luego ajusta la sección `wandb` de `configs/stage2_config.json`. Por defecto la ruta vigente usa el proyecto `pahm-stage2`; Etapa 1 usa el proyecto `etapa-1` desde `pahm_model/train_estimator.py`.
 
 ---
 
@@ -261,12 +275,12 @@ Luego activa `stage2_unsupervised.wandb.enabled` en `gym_wrapper/config.json`. P
 
 Al desarrollar extensiones sobre este código base, se deben respetar las siguientes decisiones arquitectónicas acordadas:
 
-1. **Espacio de Observaciones 3D:** El entorno Gymnasium entrega un vector continuo $[ \theta, \dot{\theta}, \theta_{ref} ]$ de tamaño 3. Esto permite entrenar politicas de seguimiento de referencia con librerias RL estandar como *Stable Baselines3*.
+1. **Espacio de Observaciones 4D:** El entorno Gymnasium entrega un vector continuo $[ \theta, \dot{\theta}, \theta_{ref}, e_{int} ]$, donde $e_{int}$ es la integral acotada del error de seguimiento. Esto permite entrenar politicas de seguimiento de referencia con contexto integral usando librerias RL estandar como *Stable Baselines3*.
 2. **Sin Envoltura de Ángulo (*No Wrapping*):** El ángulo en el estado interno se mantiene de forma acumulativa y continua. Envolver el ángulo en el intervalo $[-\pi, \pi]$ dentro del estado de la planta oculta los sobregiros y desincroniza los integradores; cualquier transformación visual o matemática debe realizarse externamente de forma aislada.
 3. **Robustez mediante Domain Randomization:** Para mitigar el sobreajuste (*overfitting*) a la trayectoria inicial desde el reposo, el método `reset` acepta el argumento `options={"randomize": True}`. Esto inicializa el episodio en un punto cinemático aleatorio pero seguro.
 4. **Cinemática del Viento y Estelas:** La actualización visual de las partículas de viento calcula su origen y destino basándose en el vector de desplazamiento real por cuadro ($dx, dy$), aplicando un factor de amplificación visual estático para que el flujo sea perfectamente visible incluso ante brisas de baja magnitud.
-5. **Fuente de Viento Configurable:** El entorno construye la perturbación automática desde `gym_wrapper/config.json` (`wind.enabled`, `wind.source`, `wind.default_pattern`, `wind.max_torque`). La lógica queda detrás de `WindSource`, por lo que una fuente aprendida puede reemplazar a `WindProcess` sin reescribir `env.step()`.
-6. **Referencia y Recompensa Configurables:** `theta_ref` se inicializa desde `control.theta_ref`, puede sobrescribirse por constructor o `reset(options={"theta_ref": ...})`, y la recompensa usa los pesos de `reward.tracking_error_weight`, `reward.velocity_weight` y `reward.control_weight`.
+5. **Fuente de Viento Configurable:** El entorno construye la perturbación automática desde `gym_wrapper/config.json` (`wind.enabled`, `wind.source`, `wind.default_pattern`, `wind.max_torque`). La lógica queda detrás de `WindSource`; `wind.source="wind_process"` usa los patrones procedurales y `wind.source="stage2_sampler"` carga `artifacts/stage2/gmm_wind_model.pkl` mediante `WindSampler` para alimentar Etapa 3 con la representación no supervisada de Etapa 2.
+6. **Referencia y Recompensa Configurables:** `theta_ref` se inicializa desde `control.theta_ref`, puede sobrescribirse por constructor o `reset(options={"theta_ref": ...})`, y la recompensa usa los pesos de `reward.tracking_error_weight`, `reward.integral_weight`, `reward.velocity_weight` y `reward.control_weight`.
 
 ---
 
@@ -283,21 +297,21 @@ python gym_wrapper/test_pahm_ode_env.py \
 
 La sección `demo` permite elegir `rl_model_type` (`naive` o `robust`), rutas de modelos entrenados, `deterministic_policy`, `interactive_wind`, `show_particles` y `show_wind_torque`. También se puede pasar una ruta explícita con `--rl_model`. En la demo, mantener presionada la tecla `G` inyecta una ráfaga manual configurada en `wind.manual_gust_*`; esto no entrena modelos y permite observar la respuesta de la política RL ante perturbaciones en tiempo real.
 
-El script de entrenamiento RL vive en `train_rl.py` y opera en modo *headless* (sin renderizado gráfico). Lee `rl_training`, `experiments` y `wandb` desde `gym_wrapper/config.json`, permite modos `naive` y `robust`, y guarda modelos separados en la ruta configurada:
+El script de entrenamiento RL vive en `train_rl.py` y opera en modo *headless* (sin renderizado gráfico). Lee `rl_training`, `experiments` y `wandb` desde `gym_wrapper/config.json`, permite modos `naive` y `robust`, y guarda modelos separados en la ruta configurada. El modo `robust` está configurado para usar `wind_source="stage2_sampler"`, conectando entrenamiento RL con el GMM aprendido en Etapa 2:
 
 ```bash
 python train_rl.py --config gym_wrapper/config.json
 python train_rl.py --config gym_wrapper/config.json --mode all
 ```
 
-La comparación cuantitativa de controladores vive en `evaluate_controllers.py`. Carga modelos ya entrenados, evalúa `naive` y `robust` en modo headless con viento de evaluación, y guarda métricas por episodio y resumen:
+La comparación cuantitativa de controladores vive en `evaluate_controllers.py`. Carga modelos ya entrenados, evalúa `naive` y `robust` en modo headless con viento de evaluación, y cicla los episodios sobre `evaluation.unseen_wind_patterns` para probar perturbaciones no vistas:
 
 ```bash
 python evaluate_controllers.py --config configs/stage3_config.json
 ```
 
-El resultado queda en `artifacts/stage3/evaluation/controller_metrics.json` y `controller_metrics.csv`, con MAE/MSE de seguimiento, tiempo de estabilización, sobreimpulso y recompensa acumulada.
+El resultado queda en `artifacts/stage3/evaluation/controller_metrics.json`, `controller_metrics.csv` e `informe.md`. El informe incluye tabla resumen naive vs robust, desglose por perturbación, interpretación de MAE/MSE/tiempo de estabilización/sobreimpulso/retorno y una conclusión explícita sobre si el controlador robusto supera o no al naive.
 
 La telemetría de Etapa 3 está centralizada en `pahm_stage3/wandb_logger.py`. La sección `wandb` permite activar/desactivar W&B, usar `mode=disabled` para pruebas locales, y controlar `log_models`/`log_evaluation`. Cuando está habilitado, el entrenamiento registra hiperparámetros, configuración de entorno/recompensa/viento, métricas de entrenamiento y artefactos de modelo/config; la evaluación registra métricas comparativas y artefactos JSON/CSV.
 
-El entorno ya acepta `theta_ref` por configuracion, constructor, `set_theta_ref(value)` o `reset(options={"theta_ref": value})`, y reporta `theta_ref`, `tracking_error` y `abs_tracking_error` en `info`.
+El entorno ya acepta `theta_ref` por configuracion, constructor, `set_theta_ref(value)` o `reset(options={"theta_ref": value})`, observa `[theta, theta_dot, theta_ref, error_integral]` y reporta `theta_ref`, `tracking_error`, `abs_tracking_error` y `error_integral` en `info`.

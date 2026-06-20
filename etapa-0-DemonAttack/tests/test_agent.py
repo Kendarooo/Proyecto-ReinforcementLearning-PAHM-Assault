@@ -7,13 +7,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import json
 import numpy as np
 import torch
-import tempfile
 import pytest
 
 from network import DQNNetwork
 from replay_buffer import ReplayBuffer
 from dqn_agent import DoubleDQNAgent
-from wrappers import make_env, ResizeRGB, FrameStackRGB, NormalizePixels
+from wrappers import make_env
 
 
 # ------------------------------------------------------------------

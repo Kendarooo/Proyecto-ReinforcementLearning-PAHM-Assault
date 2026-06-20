@@ -11,7 +11,6 @@ AUDITORÍA: Alexandra, Bryan, Katherine, Kendall
 
 import os
 import sys
-import pytest
 import torch
 
 # Inyección dinámica de la raíz del proyecto para evitar ModuleNotFoundError
@@ -30,7 +29,6 @@ def test_custom_loss_calculation() -> None:
     lambda_2 = 0.2
     loss_fn = PAHMProjectLoss(lambda_1=lambda_1, lambda_2=lambda_2)
     
-    batch_size = 2
     # Simulamos diferencias conocidas para verificar matemáticamente el resultado
     theta_obs = torch.tensor([[0.5], [-0.5]], dtype=torch.float32)
     theta_sim = torch.tensor([[0.4], [-0.6]], dtype=torch.float32)

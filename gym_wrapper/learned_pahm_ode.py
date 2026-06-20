@@ -369,6 +369,7 @@ class LearnedPAHMODE(gym.Env):
             "wind_torque": float(self.wind_torque),
             "wind_pattern": self.active_wind_pattern if self.enable_wind else "manual",
             "configured_wind_pattern": self.configured_wind_pattern,
+            "wind_source": getattr(self.wind_source, "source", "manual"),
             "wind_automatic": bool(self.enable_wind),
         }
 

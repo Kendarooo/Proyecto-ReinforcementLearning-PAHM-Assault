@@ -30,8 +30,8 @@ if project_root not in sys.path:
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from sequence_estimator import WindSequenceEstimator
-from dataloader import get_dataloaders
+from sequence_estimator import WindSequenceEstimator  # noqa: E402
+from dataloader import get_dataloaders  # noqa: E402
 
 
 def build_gru_window(
@@ -158,7 +158,7 @@ def main() -> None:
     estimador_wind_path = os.path.join(output_dir, "estimador_wind.pth")
     shutil.copy(checkpoint_path, estimador_wind_path)
 
-    print(f"\n[+] Exportación completada:")
+    print("\n[+] Exportación completada:")
     print(f"    Trayectorias procesadas : {total_traj}")
     print(f"    Directorio de salida    : {output_dir}/")
     print(f"    τ_w — min: {tau_arr.min():.4f} | max: {tau_arr.max():.4f} | std: {tau_arr.std():.4f}")

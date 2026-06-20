@@ -9,13 +9,30 @@ from gym_wrapper.learned_pahm_ode import _load_wrapper_config
 from gym_wrapper.learned_pahm_ode import LearnedPAHMODE
 from gym_wrapper.wind_source import (
     NoWindSource,
+    Stage2SamplerWindSource,
     WindProcessSource,
     build_wind_source_from_config,
 )
+from pahm_stage2.unsupervised_model import GMMWindModel
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = PROJECT_ROOT / "pahm_model" / "pahm_fast_v2_best.pth"
+
+
+def _fit_and_save_stage2_model(tmp_path: Path) -> Path:
+    rng = np.random.default_rng(21)
+    features = np.vstack(
+        [
+            rng.normal(0.0, 0.01, size=(8, 6)),
+            rng.normal(0.5, 0.01, size=(8, 6)),
+        ]
+    )
+    model = GMMWindModel((2, 2), random_state=21)
+    model.fit(features)
+    checkpoint_path = tmp_path / "gmm_wind_model.pkl"
+    model.save(str(checkpoint_path))
+    return checkpoint_path
 
 
 def _make_env(**kwargs) -> LearnedPAHMODE:
@@ -79,6 +96,63 @@ def test_wind_source_can_be_disabled_from_config():
     assert sample.active is False
     assert sample.source == "none"
     assert sample.torque == 0.0
+
+
+def test_stage2_sampler_wind_source_can_be_built_from_config(tmp_path):
+    checkpoint_path = _fit_and_save_stage2_model(tmp_path)
+    config = _wrapper_config_with_wind(enabled=True)
+    config["wind"]["source"] = "stage2_sampler"
+    config["wind"]["stage2_sampler_checkpoint"] = str(checkpoint_path)
+    config["wind"]["stage2_sampler_features"] = [
+        "mean",
+        "std",
+        "max_abs",
+        "skewness",
+        "smoothness",
+        "energy",
+    ]
+
+    source = build_wind_source_from_config(config, seed=123)
+    sample = source.sample(dt=0.02, theta=0.0)
+
+    assert isinstance(source, Stage2SamplerWindSource)
+    assert sample.active is True
+    assert sample.source == "stage2_sampler"
+    assert sample.pattern == "stage2_sampler"
+    assert np.isfinite(sample.torque)
+    assert 0.0 <= sample.mag <= 1.0
+
+
+def test_env_can_use_stage2_sampler_as_automatic_wind_source(tmp_path):
+    checkpoint_path = _fit_and_save_stage2_model(tmp_path)
+    config = _wrapper_config_with_wind(enabled=True)
+    config["wind"]["source"] = "stage2_sampler"
+    config["wind"]["stage2_sampler_checkpoint"] = str(checkpoint_path)
+
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        config=config,
+        wind_seed=42,
+    )
+    try:
+        obs, reset_info = env.reset(seed=7, options={"randomize": True})
+        next_obs, reward, terminated, truncated, info = env.step(np.array([0.2]))
+
+        assert env.observation_space.contains(obs)
+        assert env.observation_space.contains(next_obs)
+        assert np.isfinite(reward)
+        assert isinstance(terminated, bool)
+        assert isinstance(truncated, bool)
+        assert reset_info["wind_automatic"] is True
+        assert reset_info["wind_source"] == "stage2_sampler"
+        assert info["wind_automatic"] is True
+        assert info["wind_source"] == "stage2_sampler"
+        assert info["wind_pattern"] == "stage2_sampler"
+        assert np.isfinite(info["wind_torque"])
+    finally:
+        env.close()
 
 
 def test_headless_env_with_automatic_wind_returns_valid_info():

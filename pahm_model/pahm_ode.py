@@ -9,7 +9,6 @@
 
 import torch
 import torch.nn as nn
-import numpy as np
 from utils import odeint_simple, CubicSplineInterpolation
 
 class PAHMHybridODE(nn.Module):

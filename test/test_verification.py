@@ -27,10 +27,10 @@ if project_root not in sys.path:
 if pahm_model_dir not in sys.path:
     sys.path.insert(0, pahm_model_dir)
 
-from sequence_estimator import WindSequenceEstimator
-from rk4_integrator import TaylorWindIntegrator
-from dataloader import get_dataloaders
-from pahm_fast import PAHMFastModel
+from sequence_estimator import WindSequenceEstimator  # noqa: E402
+from rk4_integrator import TaylorWindIntegrator  # noqa: E402
+from dataloader import get_dataloaders  # noqa: E402
+from pahm_fast import PAHMFastModel  # noqa: E402
 
 
 class MockPerfectPhysics(torch.nn.Module):
@@ -245,7 +245,7 @@ def test_open_loop_baseline_comparison_fr7() -> None:
     final_mse_gru = float(np.mean(mse_gru))
 
     print(f"\n{'='*60}")
-    print(f"  REPORTE FR-7 — Evaluacion en lazo abierto (test set)")
+    print("  REPORTE FR-7 — Evaluacion en lazo abierto (test set)")
     print(f"{'='*60}")
     print(f"  MSE ODE pura   : {final_mse_ode:.8f}")
     print(f"  MSE ODE + GRU  : {final_mse_gru:.8f}")

@@ -26,6 +26,7 @@ DEFAULT_RL_TRAINING = {
     "enabled": True,
     "mode": "naive",
     "algorithm": "PPO",
+    "seed": 42,
     "total_timesteps": 10000,
     "learning_rate": 0.0003,
     "gamma": 0.99,
@@ -50,6 +51,7 @@ DEFAULT_EXPERIMENTS = {
     },
     "robust": {
         "wind_enabled": True,
+        "wind_source": "stage2_sampler",
         "model_name": "pahm_ppo_robust",
     },
 }
@@ -121,6 +123,7 @@ def make_training_env(config: dict[str, Any]) -> LearnedPAHMODE:
         reset_angle_deg=rl_config.get("reset_angle_deg", 720),
         enable_wind=enable_wind,
         wind_pattern=rl_config.get("wind_pattern"),
+        wind_source=rl_config.get("wind_source"),
         wind_seed=rl_config.get("wind_seed"),
         randomize_wind_pattern=randomize_wind_pattern,
         config=config,
@@ -157,6 +160,7 @@ def build_agent(algorithm_name: str, env, config: dict[str, Any]):
         "learning_rate": rl_config["learning_rate"],
         "gamma": rl_config["gamma"],
         "device": rl_config["device"],
+        "seed": int(rl_config["seed"]) if rl_config.get("seed") is not None else None,
         "verbose": int(rl_config.get("verbose", 0)),
         "tensorboard_log": str(_resolve_path(rl_config["log_dir"], Path(config["_config_dir"]))),
     }
@@ -265,7 +269,7 @@ def train_from_config(config_path: str | Path, mode: str | None = None) -> str:
     wandb_run = _start_wandb_run(config)
     config["_wandb_run"] = wandb_run
     try:
-        env.reset(options={"randomize": True})
+        env.reset(seed=rl_config.get("seed"), options={"randomize": True})
         model = build_agent(rl_config["algorithm"], env, config)
         model.learn(
             total_timesteps=int(rl_config["total_timesteps"]),

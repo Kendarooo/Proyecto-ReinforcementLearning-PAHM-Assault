@@ -141,6 +141,15 @@
     ],
     "default_pattern": "gust",
     "max_torque": 5.0,
+    "stage2_sampler_checkpoint": "../artifacts/stage2/gmm_wind_model.pkl",
+    "stage2_sampler_features": [
+      "mean",
+      "std",
+      "max_abs",
+      "skewness",
+      "smoothness",
+      "energy"
+    ],
     "stochastic": true,
     "manual_gust_enabled": true,
     "manual_gust_torque": 5.0,
@@ -161,6 +170,7 @@
     "enabled": true,
     "mode": "naive",
     "algorithm": "PPO",
+    "seed": 42,
     "total_timesteps": 1000000,
     "learning_rate": 0.0003,
     "gamma": 0.99,
@@ -186,6 +196,7 @@
     },
     "robust": {
       "wind_enabled": true,
+      "wind_source": "stage2_sampler",
       "model_name": "pahm_ppo_robust"
     }
   },
@@ -217,6 +228,7 @@
     },
     "output_dir": "../artifacts/stage3/evaluation",
     "metrics_path": "../artifacts/stage3/evaluation/controller_metrics.json",
+    "report_path": "../artifacts/stage3/evaluation/informe.md",
     "settling_tolerance": 0.05,
     "settling_window": 50,
     "unseen_wind_patterns": [
