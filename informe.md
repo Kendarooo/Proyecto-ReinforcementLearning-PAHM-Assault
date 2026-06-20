@@ -1,13 +1,12 @@
 # Informe del Proyecto 2 - PAHM
 
-Este documento sirve como base guia para el informe final. Las tablas estan
-estructuradas para completar resultados medidos, hardware y evidencia de
-ejecucion sin mezclar datos preliminares con resultados finales.
+Alexandra Alfaro Elizondo, Kendall Madrigal Campos y Bryan Molina Lopez
+Escuela de Ingeniería Electrónica, Instituto Tecnológico de Costa Rica (ITCR), 30101 Cartago, Costa Rica
+{alexvaneska, kendallmacampos2941, bryanmolinalo772}@estudiantec.cr
 
-## 1. Resumen Ejecutivo
+## 1. Resumen
 
-Completar con una sintesis breve del objetivo del proyecto, las etapas
-implementadas y la conclusion principal sobre el controlador robusto.
+Este repositorio contiene la línea de software e infraestructura de simulación para el Proyecto 2. El objetivo del proyecto es modelar las perturbaciones de viento latentes no observadas mediante celdas recurrentes (aprendizaje de secuencias) y diseñar una política de control robusta utilizando Aprendizaje por Refuerzo (RL) sobre un entorno Gymnasium acoplado a un modelo físico híbrido (Caja Gris).
 
 ## 2. Hardware y Entorno de Ejecucion
 
