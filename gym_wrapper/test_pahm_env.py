@@ -7,15 +7,41 @@
 
 # Contiene contribuciones de Claude y Gemini
 
-import gymnasium as gym
 from gymnasium.wrappers import TimeLimit
-from learned_pahm import LearnedPAHM
 import numpy as np
 import pygame
 import sys
 import signal
 import argparse
-from pahm_ui import PAHMController, Oscilloscope, CONFIG
+
+try:
+    from learned_pahm import LearnedPAHM
+except ImportError:
+    try:
+        from learned_pahm_ode import LearnedPAHMODE as LearnedPAHM
+    except ImportError:
+        from gym_wrapper.learned_pahm_ode import LearnedPAHMODE as LearnedPAHM
+
+try:
+    from pahm_ui import PAHMController, Oscilloscope, CONFIG
+except ImportError:
+    from gym_wrapper.pahm_ui import PAHMController, Oscilloscope, CONFIG
+
+
+def _build_env(render_mode: str, model_name: str, reset_angle: float):
+    try:
+        return LearnedPAHM(
+            render_mode=render_mode,
+            model_name=model_name,
+            reset_angle=reset_angle,
+        )
+    except TypeError:
+        return LearnedPAHM(
+            render_mode=render_mode,
+            model_path=model_name,
+            reset_angle_deg=reset_angle,
+            max_wind_torque=CONFIG["wind_patterns"]["max_wind_torque"],
+        )
 
 def main():
     # Parsear argumentos de línea de comandos
@@ -54,7 +80,7 @@ Ejemplos de uso:
     args = parser.parse_args()
     
     # Mostrar configuración
-    print(f"🤖 Configuración:")
+    print("🤖 Configuración:")
     print(f"   - Modelo: {args.model}")
     print(f"   - Ángulo de reset: {args.reset_angle}°")
     print(f"   - Máximo pasos por episodio: {args.max_steps}")
@@ -82,10 +108,10 @@ Ejemplos de uso:
     
     # Crear entorno con parámetros personalizados
     try:
-        base_env = LearnedPAHM(
-            render_mode="rgb_array", 
+        base_env = _build_env(
+            render_mode="rgb_array",
             model_name=args.model,
-            reset_angle=args.reset_angle
+            reset_angle=args.reset_angle,
         )
         # Aplicar wrapper TimeLimit para manejar truncamiento automático
         env = TimeLimit(base_env, max_episode_steps=args.max_steps)
@@ -179,7 +205,7 @@ Ejemplos de uso:
         # Backup en caso de que el signal handler no funcione
         print("\n🛑 KeyboardInterrupt detectado. Cerrando...")
 
-    except Exception as e:  # <--- Agrega esto antes del finally
+    except Exception:
         import traceback
         traceback.print_exc()
         
@@ -188,11 +214,11 @@ Ejemplos de uso:
         print("🧹 Limpiando recursos...")
         try:
             env.close()
-        except:
+        except Exception:
             pass
         try:
             pygame.quit()
-        except:
+        except Exception:
             pass
         print("✅ Programa terminado correctamente.")
         sys.exit(0)

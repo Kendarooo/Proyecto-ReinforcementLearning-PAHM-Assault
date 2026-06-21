@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Reinforcement learning outputs
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.pkl
+videos/
+recordings/
+
+# Weights & Biases local run data
+wandb/
+
+# Local logs and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+.DS_Store
+
+# IDE/editor local metadata
+.idea/
+.vscode/

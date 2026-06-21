@@ -1,0 +1,106 @@
+"""
+sanity_check.py — v1.0
+Verifica que el entorno ALE/Boxing-v5 está correctamente instalado
+y que la GPU está disponible para entrenamiento.
+
+Uso:
+    python sanity_check.py
+"""
+
+import json
+import sys
+from pathlib import Path
+
+
+def load_config(path: str = "config_dqn.json") -> dict:
+    with open(path, "r") as f:
+        return json.load(f)
+
+
+def check_python_version() -> None:
+    major, minor = sys.version_info[:2]
+    assert (major, minor) == (3, 11), (
+        f"Se requiere Python 3.11, se encontró {major}.{minor}"
+    )
+    print(f"  [OK] Python {major}.{minor}")
+
+
+def check_torch_and_gpu() -> None:
+    import torch # type: ignore
+
+    print(f"  [OK] PyTorch {torch.__version__}")
+    if torch.cuda.is_available():
+        name = torch.cuda.get_device_name(0)
+        vram = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        print(f"  [OK] GPU detectada: {name} ({vram:.1f} GB VRAM)")
+    else:
+        print("  [WARN] GPU no disponible — se usará CPU (entrenamiento lento)")
+
+
+def check_gymnasium_atari(env_id: str) -> None:
+    import ale_py # type: ignore
+    import gymnasium as gym # type: ignore
+
+    # ale-py >= 0.9 requiere registro explícito con Gymnasium
+    gym.register_envs(ale_py)
+
+    env = gym.make(env_id, render_mode=None)
+    obs, _ = env.reset()
+    action = env.action_space.sample()
+    obs, reward, terminated, truncated, info = env.step(action)
+    env.close()
+
+    print(f"  [OK] Entorno '{env_id}' funcional")
+    print(f"       obs.shape={obs.shape}, action_space={env.action_space}")
+
+
+def check_stable_baselines3() -> None:
+    import stable_baselines3 as sb3 # type: ignore
+
+    print(f"  [OK] Stable-Baselines3 {sb3.__version__}")
+
+
+def check_wandb() -> None:
+    import wandb # type: ignore
+
+    print(f"  [OK] wandb {wandb.__version__}")
+
+
+def check_paths(config: dict) -> None:
+    for key, rel_path in config["paths"].items():
+        if key == "demo_model_path":
+            continue
+        path = Path(rel_path)
+        path.mkdir(parents=True, exist_ok=True)
+        print(f"  [OK] Directorio '{rel_path}' existe o fue creado")
+
+
+def main() -> None:
+    print("\n=== Sanity Check — Etapa 0 Boxing DQN v1.0 ===\n")
+
+    config = load_config()
+    env_id = config["environment"]["env_id"]
+
+    print("[1] Verificando versión de Python...")
+    check_python_version()
+
+    print("\n[2] Verificando PyTorch y GPU...")
+    check_torch_and_gpu()
+
+    print("\n[3] Verificando Gymnasium + ALE...")
+    check_gymnasium_atari(env_id)
+
+    print("\n[4] Verificando Stable-Baselines3...")
+    check_stable_baselines3()
+
+    print("\n[5] Verificando wandb...")
+    check_wandb()
+
+    print("\n[6] Verificando estructura de directorios...")
+    check_paths(config)
+
+    print("\n=== Todo OK. El entorno está listo para entrenamiento. ===\n")
+
+
+if __name__ == "__main__":
+    main()

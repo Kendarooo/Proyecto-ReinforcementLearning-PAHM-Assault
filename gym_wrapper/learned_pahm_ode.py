@@ -13,10 +13,12 @@ import gymnasium as gym
 import json
 from gymnasium import spaces
 from gymnasium.error import DependencyNotInstalled
+from pathlib import Path
 from typing import Optional
 
 # Añadir directorio hermano al path para cargar el modelo
-sys.path.append(os.path.join(os.path.dirname(__file__), '../pahm_model'))
+current_dir = os.path.dirname(__file__)
+sys.path.append(os.path.join(current_dir, '../pahm_model'))
 
 try:
     from pahm_ode import PAHMHybridODE
@@ -25,10 +27,28 @@ except ImportError:
     raise ImportError("No se pudieron importar los modelos. Verifique ../pahm_model/")
 
 try:
-    import pygame
-    from pygame import gfxdraw
+    from wind_source import build_wind_source_from_config
 except ImportError:
-    raise DependencyNotInstalled("pygame required")
+    from gym_wrapper.wind_source import build_wind_source_from_config
+
+
+def _load_wrapper_config() -> dict:
+    """Carga config.json anclado al archivo, no al directorio de ejecucion."""
+    config_path = Path(__file__).resolve().with_name("config.json")
+    with config_path.open("r", encoding="utf-8") as config_file:
+        return json.load(config_file)
+
+
+def _require_pygame():
+    """Importa Pygame solo cuando se necesita renderizado."""
+    try:
+        import pygame
+        from pygame import gfxdraw
+    except ImportError as exc:
+        raise DependencyNotInstalled(
+            "pygame required for render_mode='human' or 'rgb_array'"
+        ) from exc
+    return pygame, gfxdraw
 
 
 
@@ -44,7 +64,7 @@ class LearnedPAHMODE(gym.Env):
      
     
     Observación:
-        [theta_radians, theta_dot_rad]
+        [theta_radians, theta_dot_rad, theta_ref_rad]
 
         
     Acción:
@@ -61,7 +81,16 @@ class LearnedPAHMODE(gym.Env):
                  model_path="pahm_ode_best.pth",
                  reset_angle_deg=120,
                  dt=0.02,                 # 50Hz por defecto
-                 max_wind_torque=20.0):   # Escala física del torque de viento): # 50Hz por defecto
+                 max_wind_torque: float | None = None,
+                 enable_wind: bool | None = None,
+                 wind_pattern: str | None = None,
+                 wind_config: dict | None = None,
+                 wind_seed: int | None = None,
+                 randomize_wind_pattern: bool = False,
+                 theta_ref: float | None = None,
+                 reward_weights: dict | None = None,
+                 config: dict | None = None,
+                 wind_source: str | None = None):
         
         self.model_path = model_path
         self.render_mode = render_mode
@@ -69,6 +98,28 @@ class LearnedPAHMODE(gym.Env):
         self.reset_angle_deg = reset_angle_deg
                 
         self.device = "cpu" # CPU es preferible para inferencia paso a paso (baja latencia)
+        wrapper_config = config or _load_wrapper_config()
+        wind_settings = wrapper_config.get("wind", {})
+        control_settings = wrapper_config.get("control", {})
+        reward_settings = wrapper_config.get("reward", {})
+        domain_randomization_settings = wrapper_config.get("domain_randomization", {})
+        self.domain_randomization_enabled = bool(
+            domain_randomization_settings.get("enabled", False)
+        )
+        self.default_reset_options = (
+            dict(domain_randomization_settings.get("reset_options", {}))
+            if self.domain_randomization_enabled
+            else {}
+        )
+        self.random_initial_angle_deg = float(
+            domain_randomization_settings.get(
+                "initial_angle_deg",
+                self.reset_angle_deg * 0.5,
+            )
+        )
+        self.random_initial_velocity_abs = float(
+            domain_randomization_settings.get("initial_velocity_abs", 1.0)
+        )
         
         # Cargar Modelo ODE
         print(f"🔄 Cargando modelo ODE desde: {self.model_path}")
@@ -92,9 +143,54 @@ class LearnedPAHMODE(gym.Env):
         # Espacios de Gym
         self.action_space = spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
 
-        # Observación: [Ángulo en radianes, Velocidad angular en rad/s]
-        high_obs = np.array([np.deg2rad(180.0), 10.0], dtype=np.float32)
-        self.observation_space = spaces.Box(low=-high_obs, high=high_obs, dtype=np.float32)
+        self.limit_rad = float(np.deg2rad(self.reset_angle_deg))
+        self.theta_ref_min = float(control_settings.get("theta_ref_min", -self.limit_rad))
+        self.theta_ref_max = float(control_settings.get("theta_ref_max", self.limit_rad))
+        if self.theta_ref_min > self.theta_ref_max:
+            raise ValueError("control.theta_ref_min cannot exceed control.theta_ref_max")
+
+        self.theta_ref = 0.0
+        self._theta_ref_fixed_by_constructor = theta_ref is not None
+        configured_theta_ref = control_settings.get("theta_ref", 0.0)
+        self.set_theta_ref(configured_theta_ref if theta_ref is None else theta_ref)
+        self.randomize_theta_ref = bool(
+            domain_randomization_settings.get("theta_ref_randomize", False)
+        )
+        self.random_theta_ref_min = float(
+            domain_randomization_settings.get("theta_ref_min", self.theta_ref_min)
+        )
+        self.random_theta_ref_max = float(
+            domain_randomization_settings.get("theta_ref_max", self.theta_ref_max)
+        )
+        if self.random_theta_ref_min > self.random_theta_ref_max:
+            raise ValueError("domain_randomization.theta_ref_min cannot exceed theta_ref_max")
+        if (
+            self.random_theta_ref_min < self.theta_ref_min
+            or self.random_theta_ref_max > self.theta_ref_max
+        ):
+            raise ValueError(
+                "domain_randomization theta_ref range must stay within control theta_ref bounds"
+            )
+        self.error_integral = 0.0
+        self.error_integral_clip = float(
+            control_settings.get("error_integral_clip", np.pi)
+        )
+
+        self.reward_weights = self._build_reward_weights(
+            reward_settings=reward_settings,
+            overrides=reward_weights,
+        )
+
+        # Observación: [ángulo, velocidad angular, ángulo objetivo, integral del error]
+        low_obs = np.array(
+            [-self.limit_rad, -10.0, self.theta_ref_min, -self.error_integral_clip],
+            dtype=np.float32,
+        )
+        high_obs = np.array(
+            [self.limit_rad, 10.0, self.theta_ref_max, self.error_integral_clip],
+            dtype=np.float32,
+        )
+        self.observation_space = spaces.Box(low=low_obs, high=high_obs, dtype=np.float32)
 
         # Estado visual
         self.screen_dim = 500
@@ -108,26 +204,228 @@ class LearnedPAHMODE(gym.Env):
         self.wind_active = False
         self.wind_mag = 0.0
         self.wind_angle = 0.0
-        # Escala recibida por constructor (SSOT en config.json; la lee el
-        # script que instancia el entorno, no el entorno).
-        self.max_wind_torque = max_wind_torque
+        self.wind_torque = 0.0
+        self.enable_wind = (
+            bool(wind_settings.get("enabled", False))
+            if enable_wind is None
+            else bool(enable_wind)
+        )
+        self.configured_wind_pattern = (
+            wind_pattern
+            if wind_pattern is not None
+            else wind_settings.get("default_pattern", "gust")
+        )
+        self.active_wind_pattern = self.configured_wind_pattern
+        self.randomize_wind_pattern = randomize_wind_pattern
+        self.wind_seed = wind_seed
+        self.wind_patterns_config = wind_config or wrapper_config["wind_patterns"]
+        self.max_wind_torque = (
+            float(max_wind_torque)
+            if max_wind_torque is not None
+            else float(
+                wind_settings.get(
+                    "max_torque",
+                    self.wind_patterns_config.get("max_wind_torque", 0.0),
+                )
+            )
+        )
+
+        self.wind_source = build_wind_source_from_config(
+            wrapper_config,
+            wind_patterns_config=self.wind_patterns_config,
+            seed=wind_seed,
+            enabled_override=self.enable_wind,
+            source_override=wind_source,
+            pattern_override=self.configured_wind_pattern,
+            max_torque_override=self.max_wind_torque,
+        )
+        self.wind_process = getattr(self.wind_source, "process", None)
+        if self.enable_wind:
+            self.wind_active = True
 
         # Cargar configuración visual de partículas
         self.wind_cfg = {"count": 40, "speed": 15.0, "length": 20.0, "color": [100, 240, 255]}
-        try:
-            with open('config.json', 'r') as f:
-                cfg = json.load(f)
-                if "components" in cfg and "wind_particles" in cfg["components"]:
-                    self.wind_cfg = cfg["components"]["wind_particles"]
-        except Exception: pass
+        if "components" in wrapper_config and "wind_particles" in wrapper_config["components"]:
+            self.wind_cfg = wrapper_config["components"]["wind_particles"]
         
         self.particles = np.random.rand(self.wind_cfg["count"], 2) * self.screen_dim        
         
     def set_wind(self, active, mag, angle):
+        """Actualiza viento manual para demo; no sobreescribe WindProcess automatico."""
+        if self.enable_wind:
+            return
         self.wind_active = active
         self.wind_mag = mag
         self.wind_angle = angle
+
+    def _build_reward_weights(
+        self,
+        *,
+        reward_settings: dict,
+        overrides: dict | None,
+    ) -> dict:
+        """Normaliza pesos de recompensa desde config y overrides historicos."""
+        weights = {
+            "error": float(
+                reward_settings.get(
+                    "tracking_error_weight",
+                    reward_settings.get("error", 4.0),
+                )
+            ),
+            "integral": float(
+                reward_settings.get(
+                    "integral_weight",
+                    reward_settings.get("integral", 0.0),
+                )
+            ),
+            "velocity": float(
+                reward_settings.get(
+                    "velocity_weight",
+                    reward_settings.get("velocity", 0.1),
+                )
+            ),
+            "action": float(
+                reward_settings.get(
+                    "control_weight",
+                    reward_settings.get("action", 0.01),
+                )
+            ),
+        }
+        for key, value in (overrides or {}).items():
+            normalized_key = {
+                "tracking_error_weight": "error",
+                "integral_weight": "integral",
+                "velocity_weight": "velocity",
+                "control_weight": "action",
+            }.get(key, key)
+            weights[normalized_key] = float(value)
+        self.reward_tracking_error_clip = reward_settings.get("tracking_error_clip")
+        if self.reward_tracking_error_clip is not None:
+            self.reward_tracking_error_clip = float(self.reward_tracking_error_clip)
+        self.reward_velocity_clip = reward_settings.get("velocity_clip")
+        if self.reward_velocity_clip is not None:
+            self.reward_velocity_clip = float(self.reward_velocity_clip)
+        return weights
+
+    def set_theta_ref(self, value: float) -> None:
+        """Actualiza el ángulo objetivo usado por la observación y recompensa."""
+        theta_ref = float(value)
+        if not np.isfinite(theta_ref):
+            raise ValueError("theta_ref must be finite")
+        if theta_ref < self.theta_ref_min or theta_ref > self.theta_ref_max:
+            raise ValueError(
+                f"theta_ref={theta_ref} outside configured bounds "
+                f"[{self.theta_ref_min}, {self.theta_ref_max}]"
+            )
+        self.theta_ref = theta_ref
+
+    def _get_obs(self) -> np.ndarray:
+        return np.array(
+            [self.state[0], self.state[1], self.theta_ref, self.error_integral],
+            dtype=np.float32,
+        )
         
+    def _sample_wind_pattern(self) -> str:
+        if self.randomize_wind_pattern:
+            patterns = list(getattr(self.wind_source, "patterns", ()))
+            if not patterns:
+                return self.configured_wind_pattern
+            return str(self.np_random.choice(patterns))
+        return self.configured_wind_pattern
+
+    def _reset_wind_process(self) -> None:
+        if not self.enable_wind:
+            self.wind_torque = 0.0
+            return
+        self.active_wind_pattern = self._sample_wind_pattern()
+        self.wind_source.set_pattern(self.active_wind_pattern)
+        self.wind_active = True
+
+    def _resolve_wind_for_step(self) -> float:
+        if self.enable_wind:
+            sample = self.wind_source.sample(self.dt, float(self.state[0]))
+            self.wind_mag = sample.mag
+            self.wind_angle = sample.angle
+            self.wind_torque = sample.torque
+            self.wind_active = sample.active
+            self.active_wind_pattern = sample.pattern
+            return self.wind_torque
+
+        tau_val = 0.0
+        if self.wind_active:
+            tau_val = (
+                self.wind_mag
+                * self.max_wind_torque
+                * np.cos(self.state[0] - self.wind_angle)
+            )
+        self.wind_torque = float(tau_val)
+        return self.wind_torque
+
+    def _wind_info(self) -> dict:
+        return {
+            "wind_active": bool(self.wind_active),
+            "wind_mag": float(self.wind_mag),
+            "wind_angle": float(self.wind_angle),
+            "wind_torque": float(self.wind_torque),
+            "wind_pattern": self.active_wind_pattern if self.enable_wind else "manual",
+            "configured_wind_pattern": self.configured_wind_pattern,
+            "wind_source": getattr(self.wind_source, "source", "manual"),
+            "wind_automatic": bool(self.enable_wind),
+        }
+
+    def _tracking_info(self) -> dict:
+        error = float(self.state[0] - self.theta_ref)
+        return {
+            "theta_ref": float(self.theta_ref),
+            "tracking_error": error,
+            "abs_tracking_error": abs(error),
+            "error_integral": float(self.error_integral),
+        }
+
+    def _info(self) -> dict:
+        return {**self._wind_info(), **self._tracking_info()}
+
+    def _maybe_randomize_theta_ref(self, options: dict) -> None:
+        if "theta_ref" in options:
+            self.set_theta_ref(options["theta_ref"])
+            return
+        if self._theta_ref_fixed_by_constructor and "theta_ref_randomize" not in options:
+            return
+        randomize_requested = bool(options.get("randomize", False))
+        theta_ref_randomize = bool(options.get("theta_ref_randomize", self.randomize_theta_ref))
+        if randomize_requested and theta_ref_randomize:
+            theta_ref = self.np_random.uniform(
+                low=self.random_theta_ref_min,
+                high=self.random_theta_ref_max,
+            )
+            self.set_theta_ref(theta_ref)
+
+    def _tracking_reward(self, theta: float, theta_dot: float, action: float) -> float:
+        error = float(theta - self.theta_ref)
+        if self.reward_tracking_error_clip is not None:
+            error = float(
+                np.clip(
+                    error,
+                    -self.reward_tracking_error_clip,
+                    self.reward_tracking_error_clip,
+                )
+            )
+        theta_dot = float(theta_dot)
+        if self.reward_velocity_clip is not None:
+            theta_dot = float(
+                np.clip(
+                    theta_dot,
+                    -self.reward_velocity_clip,
+                    self.reward_velocity_clip,
+                )
+            )
+        integral = float(self.error_integral)
+        return -(
+            self.reward_weights["error"] * float(error ** 2)
+            + self.reward_weights["integral"] * float(integral ** 2)
+            + self.reward_weights["velocity"] * float(theta_dot ** 2)
+            + self.reward_weights["action"] * float(action ** 2)
+        )
 
     def step(self, action):
         self.last_action = action
@@ -145,11 +443,10 @@ class LearnedPAHMODE(gym.Env):
         # Necesitamos 2 puntos para el spline: t=0 y t=dt con el mismo valor
         u_seq = torch.tensor([[[u_val], [u_val]]], dtype=torch.float32) # (1, 2, 1)
 
-        # 1.5. Calcular torque externo de viento si está activo
-        tau_val = 0.0
-        if self.wind_active:
-            tau_val = self.wind_mag * self.max_wind_torque * np.cos(self.state[0] - self.wind_angle)
-            
+        # 1.5. Calcular torque externo de viento.
+        # En entrenamiento headless, enable_wind=True hace que WindProcess mande.
+        # En demo, enable_wind=False conserva el control manual via set_wind().
+        tau_val = self._resolve_wind_for_step()
         tau_seq = torch.tensor([[[tau_val], [tau_val]]], dtype=torch.float32)
         
         # 2. Integración Numérica
@@ -162,6 +459,16 @@ class LearnedPAHMODE(gym.Env):
             
         # 3. Actualizar estado
         self.state = new_state
+
+        # Acumular integral del error (con anti-windup por clip)
+        inst_error = float(self.state[0]) - float(self.theta_ref)
+        self.error_integral = float(
+            np.clip(
+                self.error_integral + inst_error * self.dt,
+                -self.error_integral_clip,
+                self.error_integral_clip,
+            )
+        )
 
         # --- Ángulo SIN envolver (decisión de diseño deliberada; conservar) ---
         # theta se mantiene continuo y acumulativo = ángulo físico real.
@@ -178,18 +485,20 @@ class LearnedPAHMODE(gym.Env):
         vel_rad_s = self.state[1]
 
         # 5. Recompensa y Terminación
-        limit_rad = np.deg2rad(self.reset_angle_deg)
-        terminated = bool(abs(angle_rad) > limit_rad)
+        terminated = bool(abs(angle_rad) > self.limit_rad)
         
-        # Recompensa simple: mantenerlo vertical (0) y quieto
-        reward = 2.0 * np.exp(-abs(angle_rad)) - 0.1 * abs(vel_rad_s) - 1.0
+        reward = self._tracking_reward(
+            theta=angle_rad,
+            theta_dot=vel_rad_s,
+            action=u_val,
+        )
         
-        obs = np.array([angle_rad,vel_rad_s], dtype=np.float32)
+        obs = self._get_obs()
         
         if self.render_mode == "human":
             self.render()
 
-        return obs, reward, terminated, False, {}
+        return obs, reward, terminated, False, self._info()
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         """
@@ -210,33 +519,46 @@ class LearnedPAHMODE(gym.Env):
                 * "randomize" (bool): Si es True, activa Domain Randomization. Muestrea 
                   un ángulo seguro (no terminal, < 50% del límite físico) y una velocidad 
                   inicial no nula para maximizar la exploración del espacio de estados.
+                * "theta_ref" (float): Ángulo objetivo opcional para este episodio.
 
         Returns:
-            tuple: (observación_inicial [theta, theta_dot], info_dict)
+            tuple: (observación_inicial [theta, theta_dot, theta_ref], info_dict)
         """        
         super().reset(seed=seed)
-        
+
         self.last_action = None
-        
-        options = options or {}
+        self.error_integral = 0.0
+
+        if options is None:
+            options = dict(self.default_reset_options)
+        else:
+            options = {**self.default_reset_options, **options}
+        self._maybe_randomize_theta_ref(options)
 
         # 1. Forzar un estado inicial específico
         if "initial_state" in options:
             self.state = np.array(options["initial_state"], dtype=np.float32)
         # 2. Inicialización aleatoria (Domain Randomization)
         elif options.get("randomize", False):
-            max_angle = np.deg2rad(self.reset_angle_deg * 0.5)
+            max_angle_deg = float(options.get("initial_angle_deg", self.random_initial_angle_deg))
+            max_angle = np.deg2rad(max_angle_deg)
+            max_velocity = float(
+                options.get("initial_velocity_abs", self.random_initial_velocity_abs)
+            )
             rand_angle = self.np_random.uniform(low=-max_angle, high=max_angle)
-            rand_vel = self.np_random.uniform(low=-1.0, high=1.0)
+            rand_vel = self.np_random.uniform(low=-max_velocity, high=max_velocity)
             self.state = np.array([rand_angle, rand_vel], dtype=np.float32)
         # 3. Comportamiento por defecto (reposo absoluto)
         else:
             self.state = np.array([0.0, 0.0], dtype=np.float32)
         
-        return np.array([self.state[0], self.state[1]], dtype=np.float32), {}        
+        self._reset_wind_process()
+        return self._get_obs(), self._info()        
 
     def render(self):
-        if self.render_mode is None: return
+        if self.render_mode is None:
+            return
+        pygame, gfxdraw = _require_pygame()
 
         if self.screen is None:
             pygame.init()
@@ -253,7 +575,7 @@ class LearnedPAHMODE(gym.Env):
         self.surf.fill((255, 255, 255))
 
         # --- Flujo de Viento (Sistema de Partículas en Fondo) ---
-        if self.wind_active and self.wind_mag > 0.01:
+        if self.wind_cfg.get("enabled", True) and self.wind_active and self.wind_mag > 0.01:
             dx = np.cos(self.wind_angle) * self.wind_mag * self.wind_cfg["speed"]
             dy = np.sin(self.wind_angle) * self.wind_mag * self.wind_cfg["speed"]
             c_color = tuple(self.wind_cfg["color"])
@@ -281,8 +603,13 @@ class LearnedPAHMODE(gym.Env):
         # Obtener ángulo real en radianes para dibujar
         theta = self.state[0]
 
-        l, r, t, b = 0, rod_length, rod_width / 2, -rod_width / 2
-        coords = [(l, b), (l, t), (r, t), (r, b)]
+        left, right, top, bottom = 0, rod_length, rod_width / 2, -rod_width / 2
+        coords = [
+            (left, bottom),
+            (left, top),
+            (right, top),
+            (right, bottom),
+        ]
         transformed_coords = []
         for c in coords:
             c = pygame.math.Vector2(c).rotate_rad(theta - np.pi / 2)
@@ -318,6 +645,6 @@ class LearnedPAHMODE(gym.Env):
 
     def close(self):
         if self.screen is not None:
+            pygame, _ = _require_pygame()
             pygame.display.quit()
             pygame.quit()
-

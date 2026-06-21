@@ -1,0 +1,164 @@
+{
+  "control": {
+    "theta_ref": 0.0,
+    "theta_ref_min": -12.566370614359172,
+    "theta_ref_max": 12.566370614359172,
+    "error_integral_clip": 3.14159265358979
+  },
+  "reward": {
+    "tracking_error_weight": 4.0,
+    "integral_weight": 0.5,
+    "velocity_weight": 0.02,
+    "control_weight": 0.001,
+    "tracking_error_clip": 1.0,
+    "velocity_clip": 5.0
+  },
+  "wind": {
+    "enabled": false,
+    "source": "wind_process",
+    "patterns": [
+      "calm",
+      "gust",
+      "sustained",
+      "turbulent"
+    ],
+    "default_pattern": "gust",
+    "max_torque": 5.0,
+    "stage2_sampler_checkpoint": "../artifacts/stage2/gmm_wind_model.pkl",
+    "stage2_sampler_features": [
+      "mean",
+      "std",
+      "max_abs",
+      "skewness",
+      "smoothness",
+      "energy"
+    ],
+    "stochastic": true,
+    "manual_gust_enabled": true,
+    "manual_gust_torque": 5.0,
+    "manual_gust_duration": 1.0
+  },
+  "domain_randomization": {
+    "enabled": true,
+    "reset_options": {
+      "randomize": true
+    },
+    "theta_ref_randomize": true,
+    "theta_ref_min": 0.0,
+    "theta_ref_max": 0.7853981633974483,
+    "initial_angle_deg": 15.0,
+    "initial_velocity_abs": 0.25
+  },
+  "rl_training": {
+    "enabled": true,
+    "mode": "naive",
+    "algorithm": "PPO",
+    "seed": 42,
+    "total_timesteps": 1000000,
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "n_steps": 2048,
+    "batch_size": 64,
+    "device": "auto",
+    "render": false,
+    "model_path": "../pahm_model/pahm_fast_v2_best.pth",
+    "reset_angle_deg": 360,
+    "max_episode_steps": 500,
+    "model_output_dir": "../artifacts/stage3/models",
+    "checkpoint_freq": 50000,
+    "log_dir": "../artifacts/stage3/logs"
+  },
+  "experiments": {
+    "modes": [
+      "naive",
+      "robust"
+    ],
+    "naive": {
+      "wind_enabled": false,
+      "model_name": "pahm_ppo_naive"
+    },
+    "robust": {
+      "wind_enabled": true,
+      "wind_source": "stage2_sampler",
+      "model_name": "pahm_ppo_robust"
+    }
+  },
+  "demo": {
+    "control_mode": "rl",
+    "rl_model_type": "robust",
+    "models": {
+      "naive": "../artifacts/stage3/models/pahm_ppo_naive.zip",
+      "robust": "../artifacts/stage3/models/pahm_ppo_robust.zip"
+    },
+    "deterministic_policy": true,
+    "render": true,
+    "interactive_wind": true,
+    "show_particles": true,
+    "show_wind_torque": true
+  },
+  "evaluation": {
+    "enabled": true,
+    "num_episodes": 10,
+    "max_steps": 1000,
+    "render": false,
+    "controllers": [
+      "naive",
+      "robust"
+    ],
+    "models": {
+      "naive": "../artifacts/stage3/models/pahm_ppo_naive.zip",
+      "robust": "../artifacts/stage3/models/pahm_ppo_robust.zip"
+    },
+    "output_dir": "../artifacts/stage3/evaluation",
+    "metrics_path": "../artifacts/stage3/evaluation/controller_metrics.json",
+    "report_path": "../artifacts/stage3/evaluation/informe.md",
+    "settling_tolerance": 0.05,
+    "settling_window": 50,
+    "unseen_wind_patterns": [
+      "gust",
+      "turbulent"
+    ],
+    "wind_enabled": true,
+    "deterministic_policy": true
+  },
+  "wandb": {
+    "enabled": true,
+    "project": "pahm-rl-stage3",
+    "entity": null,
+    "mode": "online",
+    "log_models": true,
+    "log_evaluation": true,
+    "tags": [
+      "stage3",
+      "rl",
+      "pahm"
+    ]
+  },
+  "wind_patterns": {
+    "max_wind_torque": 5.0,
+    "calm": {
+      "phi_deg": 0.0,
+      "noise_std": 0.02
+    },
+    "gust": {
+      "phi_deg": 0.0,
+      "trigger_min_s": 1.0,
+      "trigger_max_s": 4.0,
+      "duration_s": 1.5,
+      "peak_mag": 0.7
+    },
+    "sustained": {
+      "phi_deg": 0.0,
+      "onset_min_s": 0.5,
+      "onset_max_s": 2.0,
+      "level": 0.4
+    },
+    "turbulent": {
+      "phi_deg": 0.0,
+      "freq_hz": 0.8,
+      "amp": 0.25,
+      "bias": 0.3,
+      "noise_std": 0.05
+    }
+  }
+}

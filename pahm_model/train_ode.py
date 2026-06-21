@@ -16,7 +16,6 @@ import numpy as np
 import wandb
 import os
 import pandas as pd
-from datetime import datetime
 
 from pahm_ode import PAHMHybridODE
 from pahm_fast import PAHMFastModel
@@ -268,7 +267,6 @@ def train_ode():
         
         # --- Validación ---
         model.eval()
-        val_loss = 0
 
         # Nota: Como ahora usamos todo el dataset para train con sliding window,
         # el concepto de validación "out of sample" puro requeriría separar archivos.

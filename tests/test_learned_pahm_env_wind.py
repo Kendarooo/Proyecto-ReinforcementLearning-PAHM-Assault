@@ -1,0 +1,531 @@
+# _Autores_: Alexandra Alfaro Elizondo, Kendall Madrigal Campos /Codex
+
+import copy
+from pathlib import Path
+
+import numpy as np
+
+from gym_wrapper.learned_pahm_ode import _load_wrapper_config
+from gym_wrapper.learned_pahm_ode import LearnedPAHMODE
+from gym_wrapper.wind_source import (
+    NoWindSource,
+    Stage2SamplerWindSource,
+    WindProcessSource,
+    build_wind_source_from_config,
+)
+from pahm_stage2.unsupervised_model import GMMWindModel
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MODEL_PATH = PROJECT_ROOT / "pahm_model" / "pahm_fast_v2_best.pth"
+
+
+def _fit_and_save_stage2_model(tmp_path: Path) -> Path:
+    rng = np.random.default_rng(21)
+    features = np.vstack(
+        [
+            rng.normal(0.0, 0.01, size=(8, 6)),
+            rng.normal(0.5, 0.01, size=(8, 6)),
+        ]
+    )
+    model = GMMWindModel((2, 2), random_state=21)
+    model.fit(features)
+    checkpoint_path = tmp_path / "gmm_wind_model.pkl"
+    model.save(str(checkpoint_path))
+    return checkpoint_path
+
+
+def _make_env(**kwargs) -> LearnedPAHMODE:
+    return LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        max_wind_torque=20.0,
+        **kwargs,
+    )
+
+
+def _wrapper_config_with_wind(enabled: bool) -> dict:
+    config = copy.deepcopy(_load_wrapper_config())
+    config["wind"] = {
+        "enabled": enabled,
+        "source": "wind_process",
+        "patterns": ["calm", "gust", "sustained", "turbulent"],
+        "default_pattern": "turbulent",
+        "max_torque": 20.0,
+        "stochastic": True,
+    }
+    config["domain_randomization"] = {
+        "enabled": True,
+        "reset_options": {"randomize": True},
+    }
+    config["control"] = {
+        "theta_ref": 0.35,
+        "theta_ref_min": -1.0,
+        "theta_ref_max": 1.0,
+    }
+    config["reward"] = {
+        "tracking_error_weight": 2.5,
+        "velocity_weight": 0.2,
+        "control_weight": 0.03,
+    }
+    return config
+
+
+def test_wind_source_can_be_built_from_enabled_config():
+    config = _wrapper_config_with_wind(enabled=True)
+
+    source = build_wind_source_from_config(config, seed=123)
+
+    assert isinstance(source, WindProcessSource)
+    sample = source.sample(dt=0.02, theta=0.0)
+    assert sample.active is True
+    assert sample.source == "wind_process"
+    assert sample.pattern == "turbulent"
+    assert np.isfinite(sample.torque)
+    assert 0.0 <= sample.mag <= 1.0
+
+
+def test_wind_source_can_be_disabled_from_config():
+    config = _wrapper_config_with_wind(enabled=False)
+
+    source = build_wind_source_from_config(config, seed=123)
+    sample = source.sample(dt=0.02, theta=0.0)
+
+    assert isinstance(source, NoWindSource)
+    assert sample.active is False
+    assert sample.source == "none"
+    assert sample.torque == 0.0
+
+
+def test_stage2_sampler_wind_source_can_be_built_from_config(tmp_path):
+    checkpoint_path = _fit_and_save_stage2_model(tmp_path)
+    config = _wrapper_config_with_wind(enabled=True)
+    config["wind"]["source"] = "stage2_sampler"
+    config["wind"]["stage2_sampler_checkpoint"] = str(checkpoint_path)
+    config["wind"]["stage2_sampler_features"] = [
+        "mean",
+        "std",
+        "max_abs",
+        "skewness",
+        "smoothness",
+        "energy",
+    ]
+
+    source = build_wind_source_from_config(config, seed=123)
+    sample = source.sample(dt=0.02, theta=0.0)
+
+    assert isinstance(source, Stage2SamplerWindSource)
+    assert sample.active is True
+    assert sample.source == "stage2_sampler"
+    assert sample.pattern == "stage2_sampler"
+    assert np.isfinite(sample.torque)
+    assert 0.0 <= sample.mag <= 1.0
+
+
+def test_env_can_use_stage2_sampler_as_automatic_wind_source(tmp_path):
+    checkpoint_path = _fit_and_save_stage2_model(tmp_path)
+    config = _wrapper_config_with_wind(enabled=True)
+    config["wind"]["source"] = "stage2_sampler"
+    config["wind"]["stage2_sampler_checkpoint"] = str(checkpoint_path)
+
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        config=config,
+        wind_seed=42,
+    )
+    try:
+        obs, reset_info = env.reset(seed=7, options={"randomize": True})
+        next_obs, reward, terminated, truncated, info = env.step(np.array([0.2]))
+
+        assert env.observation_space.contains(obs)
+        assert env.observation_space.contains(next_obs)
+        assert np.isfinite(reward)
+        assert isinstance(terminated, bool)
+        assert isinstance(truncated, bool)
+        assert reset_info["wind_automatic"] is True
+        assert reset_info["wind_source"] == "stage2_sampler"
+        assert info["wind_automatic"] is True
+        assert info["wind_source"] == "stage2_sampler"
+        assert info["wind_pattern"] == "stage2_sampler"
+        assert np.isfinite(info["wind_torque"])
+    finally:
+        env.close()
+
+
+def test_headless_env_with_automatic_wind_returns_valid_info():
+    env = _make_env(
+        enable_wind=True,
+        wind_pattern="turbulent",
+        wind_seed=42,
+        theta_ref=1.0,
+    )
+    try:
+        obs, reset_info = env.reset(seed=7, options={"randomize": True})
+        next_obs, reward, terminated, truncated, info = env.step(np.array([0.2]))
+
+        assert env.observation_space.shape == (4,)
+        assert obs.shape == (4,)
+        assert next_obs.shape == (4,)
+        assert np.isclose(obs[2], 1.0)
+        assert np.isclose(next_obs[2], 1.0)
+        assert np.isfinite(reward)
+        assert isinstance(terminated, bool)
+        assert truncated is False
+        assert reset_info["wind_automatic"] is True
+        assert reset_info["theta_ref"] == 1.0
+        assert info["wind_automatic"] is True
+        assert info["wind_active"] is True
+        assert info["wind_pattern"] == "turbulent"
+        assert info["configured_wind_pattern"] == "turbulent"
+        assert info["theta_ref"] == 1.0
+        assert np.isfinite(info["tracking_error"])
+        assert np.isfinite(info["abs_tracking_error"])
+        assert env.configured_wind_pattern == "turbulent"
+        assert env.active_wind_pattern == "turbulent"
+        assert 0.0 <= info["wind_mag"] <= 1.0
+        assert np.isfinite(info["wind_torque"])
+    finally:
+        env.close()
+
+
+def test_env_can_enable_automatic_wind_from_external_config():
+    config = _wrapper_config_with_wind(enabled=True)
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        config=config,
+        wind_seed=42,
+    )
+    try:
+        obs, reset_info = env.reset(seed=7, options={"randomize": True})
+        next_obs, reward, terminated, truncated, info = env.step(np.array([0.2]))
+
+        assert env.observation_space.contains(obs)
+        assert env.observation_space.contains(next_obs)
+        assert np.isfinite(reward)
+        assert isinstance(terminated, bool)
+        assert isinstance(truncated, bool)
+        assert reset_info["wind_automatic"] is True
+        assert info["wind_automatic"] is True
+        assert info["wind_pattern"] == "turbulent"
+        assert np.isfinite(info["wind_torque"])
+    finally:
+        env.close()
+
+
+def test_env_can_disable_automatic_wind_from_external_config():
+    config = _wrapper_config_with_wind(enabled=False)
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        config=config,
+    )
+    try:
+        _, reset_info = env.reset(seed=7, options={"randomize": True})
+        _, _, _, _, info = env.step(np.array([0.2]))
+
+        assert reset_info["wind_automatic"] is False
+        assert info["wind_automatic"] is False
+        assert info["wind_torque"] == 0.0
+    finally:
+        env.close()
+
+
+def test_theta_ref_is_loaded_from_external_config():
+    config = _wrapper_config_with_wind(enabled=False)
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        config=config,
+    )
+    try:
+        obs, info = env.reset(seed=7)
+
+        assert np.isclose(env.theta_ref, 0.35)
+        assert np.isclose(obs[2], 0.35)
+        assert np.isclose(info["theta_ref"], 0.35)
+        assert env.observation_space.shape == (4,)
+        assert np.isclose(env.observation_space.low[2], -1.0)
+        assert np.isclose(env.observation_space.high[2], 1.0)
+    finally:
+        env.close()
+
+
+def test_reward_weights_are_loaded_from_external_config():
+    config = _wrapper_config_with_wind(enabled=False)
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        config=config,
+    )
+    try:
+        assert env.reward_weights == {"error": 2.5, "integral": 0.0, "velocity": 0.2, "action": 0.03}
+    finally:
+        env.close()
+
+
+def test_reward_is_better_when_state_is_closer_to_configured_theta_ref():
+    config = _wrapper_config_with_wind(enabled=False)
+    config["control"]["theta_ref"] = 0.5
+    config["reward"] = {
+        "tracking_error_weight": 1.0,
+        "velocity_weight": 0.0,
+        "control_weight": 0.0,
+    }
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=720,
+        config=config,
+    )
+    try:
+        env.reset(seed=1, options={"initial_state": [0.0, 0.0]})
+        close_reward = env._tracking_reward(theta=0.45, theta_dot=0.0, action=0.0)
+        far_reward = env._tracking_reward(theta=-0.5, theta_dot=0.0, action=0.0)
+
+        assert close_reward > far_reward
+    finally:
+        env.close()
+
+
+def test_tracking_reward_can_clip_large_errors_for_stable_rl_training():
+    config = _wrapper_config_with_wind(enabled=False)
+    config["control"]["theta_ref"] = 0.0
+    config["reward"] = {
+        "tracking_error_weight": 2.0,
+        "velocity_weight": 0.02,
+        "control_weight": 0.001,
+        "tracking_error_clip": 1.0,
+        "velocity_clip": 5.0,
+    }
+    env = LearnedPAHMODE(
+        render_mode=None,
+        model_path=str(MODEL_PATH),
+        reset_angle_deg=360,
+        config=config,
+    )
+    try:
+        reward = env._tracking_reward(theta=10.0, theta_dot=100.0, action=1.0)
+
+        assert np.isclose(reward, -(2.0 + 0.5 + 0.001))
+    finally:
+        env.close()
+
+
+def test_manual_wind_still_works_when_automatic_wind_is_disabled():
+    env = _make_env(enable_wind=False)
+    try:
+        env.reset(seed=1, options={"initial_state": [0.0, 0.0]})
+        env.set_wind(active=True, mag=0.5, angle=0.0)
+
+        _, _, _, _, info = env.step(np.array([0.2]))
+
+        assert info["wind_automatic"] is False
+        assert info["configured_wind_pattern"] == "gust"
+        assert info["wind_active"] is True
+        assert info["wind_mag"] == 0.5
+        assert info["wind_angle"] == 0.0
+        assert np.isclose(info["wind_torque"], 10.0)
+    finally:
+        env.close()
+
+
+def test_set_wind_does_not_override_automatic_wind_process():
+    env = _make_env(enable_wind=True, wind_pattern="sustained", wind_seed=123)
+    try:
+        env.reset(seed=5, options={"initial_state": [0.0, 0.0]})
+        env.set_wind(active=True, mag=0.99, angle=1.5)
+
+        _, _, _, _, info = env.step(np.array([0.2]))
+
+        assert info["wind_automatic"] is True
+        assert info["wind_pattern"] == "sustained"
+        assert info["configured_wind_pattern"] == "sustained"
+        assert not np.isclose(info["wind_mag"], 0.99)
+        assert not np.isclose(info["wind_angle"], 1.5)
+    finally:
+        env.close()
+
+
+def test_wind_process_is_reproducible_with_fixed_wind_seed():
+    env_a = _make_env(enable_wind=True, wind_pattern="gust", wind_seed=99)
+    env_b = _make_env(enable_wind=True, wind_pattern="gust", wind_seed=99)
+    try:
+        env_a.reset(seed=11, options={"initial_state": [0.0, 0.0]})
+        env_b.reset(seed=11, options={"initial_state": [0.0, 0.0]})
+
+        seq_a = [env_a.step(np.array([0.2]))[-1]["wind_mag"] for _ in range(20)]
+        seq_b = [env_b.step(np.array([0.2]))[-1]["wind_mag"] for _ in range(20)]
+
+        np.testing.assert_allclose(seq_a, seq_b)
+    finally:
+        env_a.close()
+        env_b.close()
+
+
+def test_reset_seed_controls_randomized_wind_pattern_choice():
+    env_a = _make_env(
+        enable_wind=True,
+        wind_pattern="calm",
+        wind_seed=1,
+        randomize_wind_pattern=True,
+    )
+    env_b = _make_env(
+        enable_wind=True,
+        wind_pattern="calm",
+        wind_seed=1,
+        randomize_wind_pattern=True,
+    )
+    try:
+        _, info_a = env_a.reset(seed=123, options={"initial_state": [0.0, 0.0]})
+        _, info_b = env_b.reset(seed=123, options={"initial_state": [0.0, 0.0]})
+
+        assert info_a["wind_pattern"] == info_b["wind_pattern"]
+        assert env_a.configured_wind_pattern == "calm"
+        assert env_b.configured_wind_pattern == "calm"
+        assert info_a["configured_wind_pattern"] == "calm"
+        assert info_b["configured_wind_pattern"] == "calm"
+        assert env_a.active_wind_pattern == info_a["wind_pattern"]
+        assert env_b.active_wind_pattern == info_b["wind_pattern"]
+    finally:
+        env_a.close()
+        env_b.close()
+
+
+def test_set_theta_ref_updates_observation_and_info():
+    env = _make_env(enable_wind=False, theta_ref=0.25)
+    try:
+        obs, info = env.reset(seed=1, options={"initial_state": [0.0, 0.0]})
+        assert np.isclose(obs[2], 0.25)
+        assert np.isclose(info["theta_ref"], 0.25)
+
+        env.set_theta_ref(0.75)
+        obs, _, _, _, info = env.step(np.array([0.0]))
+
+        assert np.isclose(obs[2], 0.75)
+        assert np.isclose(info["theta_ref"], 0.75)
+        assert np.isclose(info["tracking_error"], obs[0] - 0.75)
+        assert np.isclose(info["abs_tracking_error"], abs(0.75 - obs[0]))
+    finally:
+        env.close()
+
+
+def test_changing_theta_ref_changes_tracking_reward():
+    env = _make_env(enable_wind=False)
+    try:
+        env.reset(seed=2, options={"initial_state": [0.0, 0.0]})
+        env.set_theta_ref(0.0)
+        _, reward_at_zero_ref, _, _, _ = env.step(np.array([0.0]))
+
+        env.reset(seed=2, options={"initial_state": [0.0, 0.0]})
+        env.set_theta_ref(1.0)
+        _, reward_at_one_ref, _, _, _ = env.step(np.array([0.0]))
+
+        assert reward_at_one_ref < reward_at_zero_ref
+    finally:
+        env.close()
+
+
+def test_reset_randomize_with_theta_ref_keeps_valid_observation():
+    env = _make_env(enable_wind=False, theta_ref=0.5)
+    try:
+        obs, info = env.reset(seed=3, options={"randomize": True})
+
+        assert obs.shape == (4,)
+        assert np.isfinite(obs).all()
+        assert np.isclose(obs[2], 0.5)
+        assert np.isclose(info["theta_ref"], 0.5)
+        assert env.observation_space.contains(obs)
+    finally:
+        env.close()
+
+
+def test_reset_options_can_override_theta_ref_for_episode():
+    env = _make_env(enable_wind=True, wind_pattern="gust", wind_seed=12, theta_ref=0.0)
+    try:
+        obs, info = env.reset(
+            seed=4,
+            options={"randomize": True, "theta_ref": 1.0},
+        )
+
+        assert obs.shape == (4,)
+        assert np.isfinite(obs).all()
+        assert np.isclose(obs[2], 1.0)
+        assert np.isclose(info["theta_ref"], 1.0)
+        assert info["wind_automatic"] is True
+    finally:
+        env.close()
+
+
+def test_reset_randomize_can_sample_theta_ref_from_domain_randomization_config():
+    config = _wrapper_config_with_wind(enabled=False)
+    config["control"]["theta_ref"] = 0.0
+    config["control"]["theta_ref_min"] = -2.0
+    config["control"]["theta_ref_max"] = 2.0
+    config["domain_randomization"] = {
+        "enabled": True,
+        "reset_options": {"randomize": True},
+        "theta_ref_randomize": True,
+        "theta_ref_min": 0.25,
+        "theta_ref_max": 0.75,
+    }
+    env = _make_env(enable_wind=False, config=config)
+    try:
+        obs_a, info_a = env.reset(seed=11, options={"randomize": True})
+        obs_b, info_b = env.reset(seed=12, options={"randomize": True})
+
+        assert 0.25 <= info_a["theta_ref"] <= 0.75
+        assert 0.25 <= info_b["theta_ref"] <= 0.75
+        assert np.isclose(obs_a[2], info_a["theta_ref"])
+        assert np.isclose(obs_b[2], info_b["theta_ref"])
+        assert not np.isclose(info_a["theta_ref"], info_b["theta_ref"])
+    finally:
+        env.close()
+
+
+def test_reset_without_options_uses_configured_domain_randomization_defaults():
+    config = _wrapper_config_with_wind(enabled=False)
+    config["control"]["theta_ref"] = 0.0
+    config["control"]["theta_ref_min"] = -2.0
+    config["control"]["theta_ref_max"] = 2.0
+    config["domain_randomization"] = {
+        "enabled": True,
+        "reset_options": {"randomize": True},
+        "theta_ref_randomize": True,
+        "theta_ref_min": 0.25,
+        "theta_ref_max": 0.75,
+    }
+    env = _make_env(enable_wind=False, config=config)
+    try:
+        obs, info = env.reset(seed=21)
+
+        assert 0.25 <= info["theta_ref"] <= 0.75
+        assert np.isclose(obs[2], info["theta_ref"])
+        assert not np.allclose(obs[:2], np.array([0.0, 0.0], dtype=np.float32))
+    finally:
+        env.close()
+
+
+def test_randomized_initial_state_uses_configured_training_bounds():
+    config = _wrapper_config_with_wind(enabled=False)
+    config["domain_randomization"] = {
+        "enabled": True,
+        "reset_options": {"randomize": True},
+        "initial_angle_deg": 15.0,
+        "initial_velocity_abs": 0.2,
+    }
+    env = _make_env(enable_wind=False, config=config)
+    try:
+        obs, _ = env.reset(seed=22)
+
+        assert abs(obs[0]) <= np.deg2rad(15.0)
+        assert abs(obs[1]) <= 0.2
+    finally:
+        env.close()

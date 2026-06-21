@@ -3,14 +3,22 @@
   "window": {
     "width": 800,
     "height": 700,
-    "bg_color": [255, 255, 255]
+    "bg_color": [
+      255,
+      255,
+      255
+    ]
   },
   "layout": {
     "padding": 15,
     "group_spacing": 20,
     "item_spacing": 4,
     "panel_width": 250,
-    "panel_bg": [240, 240, 240]
+    "panel_bg": [
+      240,
+      240,
+      240
+    ]
   },
   "fonts": {
     "default_size": 24,
@@ -18,18 +26,66 @@
     "small_size": 20
   },
   "colors": {
-    "text": [0, 0, 0],
-    "primary": [0, 100, 200],
-    "primary_hover": [0, 150, 255],
-    "secondary": [100, 100, 100],
-    "secondary_hover": [150, 150, 150],
-    "border": [0, 0, 0],
-    "wind_bg": [220, 220, 220],
-    "wind_arrow": [210, 64, 64],
-    "osc_bg": [20, 20, 20],
-    "osc_grid": [40, 40, 40],
-    "osc_in": [0, 255, 100],
-    "osc_out": [255, 100, 0]
+    "text": [
+      0,
+      0,
+      0
+    ],
+    "primary": [
+      0,
+      100,
+      200
+    ],
+    "primary_hover": [
+      0,
+      150,
+      255
+    ],
+    "secondary": [
+      100,
+      100,
+      100
+    ],
+    "secondary_hover": [
+      150,
+      150,
+      150
+    ],
+    "border": [
+      0,
+      0,
+      0
+    ],
+    "wind_bg": [
+      220,
+      220,
+      220
+    ],
+    "wind_arrow": [
+      210,
+      64,
+      64
+    ],
+    "osc_bg": [
+      20,
+      20,
+      20
+    ],
+    "osc_grid": [
+      40,
+      40,
+      40
+    ],
+    "osc_in": [
+      0,
+      255,
+      100
+    ],
+    "osc_out": [
+      255,
+      100,
+      0
+    ]
   },
   "components": {
     "slider": {
@@ -49,18 +105,220 @@
       "count": 40,
       "speed": 15.0,
       "length": 20.0,
-      "color": [100, 240, 255]
-     }
+      "color": [
+        100,
+        240,
+        255
+      ]
+    }
   },
   "physics": {
     "min_setpoint_deg": 0.0,
     "max_setpoint_deg": 170.0
   },
+  "control": {
+    "theta_ref": 0.0,
+    "theta_ref_min": -12.566370614359172,
+    "theta_ref_max": 12.566370614359172,
+    "error_integral_clip": 3.14159265358979
+  },
+  "reward": {
+    "tracking_error_weight": 4.0,
+    "integral_weight": 0.5,
+    "velocity_weight": 0.02,
+    "control_weight": 0.001,
+    "tracking_error_clip": 1.0,
+    "velocity_clip": 5.0
+  },
+  "wind": {
+    "enabled": false,
+    "source": "wind_process",
+    "patterns": [
+      "calm",
+      "gust",
+      "sustained",
+      "turbulent"
+    ],
+    "default_pattern": "gust",
+    "max_torque": 5.0,
+    "stage2_sampler_checkpoint": "../artifacts/stage2/gmm_wind_model.pkl",
+    "stage2_sampler_features": [
+      "mean",
+      "std",
+      "max_abs",
+      "skewness",
+      "smoothness",
+      "energy"
+    ],
+    "stochastic": true,
+    "manual_gust_enabled": true,
+    "manual_gust_torque": 5.0,
+    "manual_gust_duration": 1.0
+  },
+  "domain_randomization": {
+    "enabled": true,
+    "reset_options": {
+      "randomize": true
+    },
+    "theta_ref_randomize": true,
+    "theta_ref_min": 0.0,
+    "theta_ref_max": 0.7853981633974483,
+    "initial_angle_deg": 15.0,
+    "initial_velocity_abs": 0.25
+  },
+  "rl_training": {
+    "enabled": true,
+    "mode": "naive",
+    "algorithm": "PPO",
+    "seed": 42,
+    "total_timesteps": 1000000,
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "n_steps": 2048,
+    "batch_size": 64,
+    "device": "auto",
+    "render": false,
+    "model_path": "../pahm_model/pahm_fast_v2_best.pth",
+    "reset_angle_deg": 360,
+    "max_episode_steps": 500,
+    "model_output_dir": "../artifacts/stage3/models",
+    "checkpoint_freq": 50000,
+    "log_dir": "../artifacts/stage3/logs"
+  },
+  "experiments": {
+    "modes": [
+      "naive",
+      "robust"
+    ],
+    "naive": {
+      "wind_enabled": false,
+      "model_name": "pahm_ppo_naive"
+    },
+    "robust": {
+      "wind_enabled": true,
+      "wind_source": "stage2_sampler",
+      "model_name": "pahm_ppo_robust"
+    }
+  },
+  "demo": {
+    "control_mode": "rl",
+    "rl_model_type": "robust",
+    "models": {
+      "naive": "../artifacts/stage3/models/pahm_ppo_naive.zip",
+      "robust": "../artifacts/stage3/models/pahm_ppo_robust.zip"
+    },
+    "deterministic_policy": true,
+    "render": true,
+    "interactive_wind": true,
+    "show_particles": true,
+    "show_wind_torque": true
+  },
+  "evaluation": {
+    "enabled": true,
+    "num_episodes": 10,
+    "max_steps": 1000,
+    "render": false,
+    "controllers": [
+      "naive",
+      "robust"
+    ],
+    "models": {
+      "naive": "../artifacts/stage3/models/pahm_ppo_naive.zip",
+      "robust": "../artifacts/stage3/models/pahm_ppo_robust.zip"
+    },
+    "output_dir": "../artifacts/stage3/evaluation",
+    "metrics_path": "../artifacts/stage3/evaluation/controller_metrics.json",
+    "report_path": "../artifacts/stage3/evaluation/informe.md",
+    "settling_tolerance": 0.05,
+    "settling_window": 50,
+    "unseen_wind_patterns": [
+      "gust",
+      "turbulent"
+    ],
+    "wind_enabled": true,
+    "deterministic_policy": true
+  },
+  "wandb": {
+    "enabled": true,
+    "project": "pahm-rl-stage3",
+    "entity": null,
+    "mode": "online",
+    "tags": [
+      "stage3",
+      "rl",
+      "pahm"
+    ],
+    "log_models": true,
+    "log_evaluation": true
+  },
   "wind_patterns": {
-    "max_wind_torque": 20.0,
-    "calm":      { "phi_deg": 0.0, "noise_std": 0.02 },
-    "gust":      { "phi_deg": 0.0, "trigger_min_s": 1.0, "trigger_max_s": 4.0, "duration_s": 1.5, "peak_mag": 0.7 },
-    "sustained": { "phi_deg": 0.0, "onset_min_s": 0.5, "onset_max_s": 2.0, "level": 0.4 },
-    "turbulent": { "phi_deg": 0.0, "freq_hz": 0.8, "amp": 0.25, "bias": 0.3, "noise_std": 0.05 }
+    "max_wind_torque": 5.0,
+    "calm": {
+      "phi_deg": 0.0,
+      "noise_std": 0.02
+    },
+    "gust": {
+      "phi_deg": 0.0,
+      "trigger_min_s": 1.0,
+      "trigger_max_s": 4.0,
+      "duration_s": 1.5,
+      "peak_mag": 0.7
+    },
+    "sustained": {
+      "phi_deg": 0.0,
+      "onset_min_s": 0.5,
+      "onset_max_s": 2.0,
+      "level": 0.4
+    },
+    "turbulent": {
+      "phi_deg": 0.0,
+      "freq_hz": 0.8,
+      "amp": 0.25,
+      "bias": 0.3,
+      "noise_std": 0.05
+    }
+  },
+  "estimator_hyperparameters": {
+    "random_seed": 42,
+    "dt": 0.02,
+    "sequence_length": 5,
+    "hidden_dim": 64,
+    "num_layers": 2,
+    "learning_rate": 0.001,
+    "batch_size": 64,
+    "epochs": 40,
+    "lambda_1_pars": 0.01,
+    "lambda_2_smooth": 0.05,
+    "checkpoint_interval_epochs": 5,
+    "checkpoint_dir": "checkpoints/",
+    "tau_w_output_dir": "outputs/tau_w",
+    "grad_clip_norm": 1.0,
+    "truncate_every": 32,
+    "tau_max": 2.0
+  },
+  "stage2_unsupervised": {
+    "model_type": "autoencoder",
+    "tau_w_input_dir": "outputs/tau_w",
+    "window_size": 128,
+    "stride": 32,
+    "hidden_dim": 64,
+    "latent_dim": 8,
+    "learning_rate": 0.001,
+    "batch_size": 64,
+    "epochs": 30,
+    "random_seed": 42,
+    "checkpoint_dir": "outputs/stage2_unsupervised",
+    "wandb": {
+      "enabled": true,
+      "project": "etapa-2-unsupervised",
+      "entity": null,
+      "name": "tau-w-autoencoder",
+      "mode": "online",
+      "tags": [
+        "stage-2",
+        "unsupervised",
+        "tau-w"
+      ]
+    }
   }
 }
