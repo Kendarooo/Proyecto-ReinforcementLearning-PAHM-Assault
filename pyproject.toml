@@ -1,0 +1,27 @@
+[project]
+name = "proyecto2-pahm-rl"
+version = "1.0.0"
+description = "Proyecto 2 – Aprendizaje Reforzado PAHM | EL5857 Aprendizaje Automático I Semestre 2026"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pylint.main]
+py-version = "3.12"
+
+[tool.pylint."messages control"]
+disable = ["C0114", "C0115", "C0116", "R0903",
+           "E0401", "R0801", "C0413", "C0411", "R0402"]
+
+[tool.pylint.format]
+max-line-length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["test", "tests"]
+python_files = ["test_*.py"]

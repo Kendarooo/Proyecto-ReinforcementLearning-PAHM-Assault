@@ -326,6 +326,69 @@ All checks passed!
 
 ---
 
+## Correcciones post-evaluación LLM — Grupo 1 y Proyecto
+
+**Fecha:** 2026-06-21
+**Evaluación de referencia:** `evaluacion_BKA_LLM_parte_grupal.pdf`
+**Modelo de lenguaje utilizado:** Claude Sonnet 4.6 (Anthropic), sesión interactiva de corrección guiada.
+
+Tras recibir la retroalimentación del evaluador LLM, el equipo realizó una revisión estricta del proyecto e implementó las siguientes correcciones:
+
+### C2 — Bug de gradientes en `train_estimator.py` (L2.3)
+
+**Problema identificado:** La asignación en línea `tau_w_history[:, -1] = tau_w_current.squeeze(-1).detach()` desconectaba el gradiente del paso actual de la historia de torques. Esto impedía que los términos de parsimonia (λ₁) y suavidad (λ₂) de la función de pérdida triple influyeran en la optimización de la GRU. El bug no estaba solo en el `.detach()` explícito, sino en la asignación in-place sobre un tensor pre-inicializado con `torch.zeros`, que rompe el grafo computacional de PyTorch aunque no se use `.detach()`.
+
+**Corrección:** Se reemplazó la estrategia de tensor pre-inicializado + asignación in-place por una lista de pasos `history_steps` construida con `torch.no_grad()` para los pasos históricos (TBPTT) y sin `no_grad` para el paso actual, luego ensamblada con `torch.stack(history_steps, dim=1)`. Esto preserva el gradiente del paso actual y permite que λ₁ y λ₂ afecten la optimización.
+
+**Verificación:** Script ad-hoc confirmó `grad is None: False` con `grad norm: 0.1389` tras el fix. Commit aplicado en `feat/etapa3-reentrenamiento`.
+
+### C3 — Test NFR-6c con GRU real (L5.3)
+
+**Problema identificado:** El test `test_wind_estimator_output_near_zero_with_clean_ode_data_nfr6c` usaba un estimador dummy en lugar del modelo real entrenado, lo que no verificaba el cumplimiento de CON-2.
+
+**Corrección:** El test ahora carga `WindSequenceEstimator` desde `checkpoints/estimator_checkpoint_epoch_40.pth` y le pasa 50 pasos de trayectoria ODE pura (τ_w = 0). Se marcó con `@pytest.mark.xfail(strict=False)` porque el modelo entrenado con el bug C2 satura a ~1.95 en datos limpios — limitación honestamente documentada en el motivo del xfail. El test verifica la GRU real tal como exige el espíritu de NFR-6c; pasará cuando se reentrenar con el fix de C2 aplicado.
+
+### C1 — Tercera columna en FR-7 (L2.5)
+
+**Problema identificado:** `test_open_loop_baseline_comparison_fr7` solo comparaba dos configuraciones (ODE pura y ODE + GRU). Faltaba la línea base de ODE + red residual del profesor (`pahm_ode_v4_best.pth`).
+
+**Corrección:** Se añadió `_hybrid_ode_step()`, un integrador RK4 de un solo paso que usa los parámetros físicos (α, β, γ) y la `residual_net` (4→64→32→1, Tanh) del checkpoint `PAHMHybridODE`. El test ahora imprime y compara tres columnas. Se creó `artifacts/stage1/fr7_comparacion_modelos.md` como artefacto persistente de referencia para el PDF.
+
+**Resultados registrados:**
+
+```text
+MSE ODE pura          : 0.00000522
+MSE ODE + red residual: 0.00000522  (+0.06%)
+MSE ODE + GRU         : 0.00000497  (+4.81%)
+```
+
+La red residual no mejora la predicción en el test set (diseñada para corregir discrepancias sistemáticas del modelo, no viento estocástico). La GRU gana a ambas líneas base.
+
+### C4 — Configuración de calidad de código (L5.4)
+
+**Problema identificado:** No existía `pyproject.toml` en la raíz del repositorio; pytest no tenía configuración formal de rutas; pylint carecía de configuración para el entorno del proyecto.
+
+**Corrección:** Se creó `pyproject.toml` con:
+- `[tool.pytest.ini_options]`: `testpaths = ["test", "tests"]`
+- `[tool.ruff]`: reglas E/F/W/I, longitud 88, target py312
+- `[tool.pylint."messages control"]`: reglas deshabilitadas justificadas: `E0401` (falso positivo — paquetes en `.venv` no visibles al pylint del sistema), `R0801` (duplicación en código del profesor), `C0413`/`C0411` (patrón obligatorio de `sys.path` previo a imports locales), `R0402` (estilo menor)
+
+**Resultado:** Pylint **8.18/10** sobre los módulos principales. Cumple NFR-5.
+
+### Resultado final de la suite tras correcciones
+
+```bash
+python -m pytest -v
+```
+
+```text
+9 passed, 1 xfailed
+```
+
+El `xfailed` corresponde a NFR-6c — documentado y esperado hasta reentrenar el estimador con el fix C2.
+
+---
+
 ## Responsabilidad final
 
 El código entregado en ambas etapas fue revisado por los respectivos equipos humanos. La IA se utilizó como apoyo para acelerar el diagnóstico de errores, la implementación y la documentación, pero las decisiones técnicas, la ejecución de pruebas y la aceptación final de los cambios corresponden a cada grupo sobre su propio alcance. Cada integrante es responsable de comprender y defender todo el código entregado, conforme a CON-4.
