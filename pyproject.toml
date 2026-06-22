@@ -16,7 +16,8 @@ ignore = ["E501"]
 py-version = "3.12"
 
 [tool.pylint."messages control"]
-disable = ["C0114", "C0115", "C0116", "R0903"]
+disable = ["C0114", "C0115", "C0116", "R0903",
+           "E0401", "R0801", "C0413", "C0411", "R0402"]
 
 [tool.pylint.format]
 max-line-length = 88

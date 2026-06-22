@@ -31,6 +31,40 @@ from sequence_estimator import WindSequenceEstimator  # noqa: E402
 from rk4_integrator import TaylorWindIntegrator  # noqa: E402
 from dataloader import get_dataloaders  # noqa: E402
 from pahm_fast import PAHMFastModel  # noqa: E402
+from pahm_ode import PAHMHybridODE  # noqa: E402
+
+
+def _hybrid_ode_step(
+    model: PAHMHybridODE,
+    state: torch.Tensor,
+    u_val: torch.Tensor,
+    dt: float,
+) -> torch.Tensor:
+    """Un paso RK4 usando los parámetros físicos y residual_net de PAHMHybridODE."""
+    alpha = model.alpha
+    beta = model.beta
+    gamma = model.gamma
+
+    def f(s: torch.Tensor) -> torch.Tensor:
+        theta = s[:, 0:1]
+        theta_dot = s[:, 1:2]
+        nn_input = torch.cat(
+            [torch.sin(theta), torch.cos(theta), theta_dot, u_val], dim=1
+        )
+        residual = model.residual_net(nn_input)
+        theta_ddot = (
+            alpha * u_val ** 2
+            - beta * theta_dot
+            - gamma * torch.sin(theta)
+            + residual
+        )
+        return torch.cat([theta_dot, theta_ddot], dim=1)
+
+    k1 = f(state)
+    k2 = f(state + 0.5 * dt * k1)
+    k3 = f(state + 0.5 * dt * k2)
+    k4 = f(state + dt * k3)
+    return state + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
 
 class MockPerfectPhysics(torch.nn.Module):
@@ -198,8 +232,18 @@ def test_open_loop_baseline_comparison_fr7() -> None:
         physics_model=physics_model, wind_estimator=estimator, dt=dt
     )
 
+    hybrid_model = PAHMHybridODE(device=str(device)).to(device)
+    ckpt_hybrid = os.path.join(pahm_model_dir, "pahm_ode_v4_best.pth")
+    if not os.path.exists(ckpt_hybrid):
+        pytest.skip(f"Checkpoint híbrido no encontrado: {ckpt_hybrid}")
+    hybrid_model.load_model(ckpt_hybrid)
+    hybrid_model.eval()
+    for param in hybrid_model.parameters():
+        param.requires_grad = False
+
     mse_pure_ode = []
     mse_gru = []
+    mse_residual = []
 
     with torch.no_grad():
         for pwm_padded, _, angle_padded in test_loader:
@@ -241,19 +285,28 @@ def test_open_loop_baseline_comparison_fr7() -> None:
                     (st_next_gru[:, 0:1] - theta_next_real).pow(2).mean().item()
                 )
 
+                # ODE + red residual del profesor (pahm_ode_v4_best.pth)
+                st_next_res = _hybrid_ode_step(hybrid_model, st_curr, ctrl, dt)
+                mse_residual.append(
+                    (st_next_res[:, 0:1] - theta_next_real).pow(2).mean().item()
+                )
+
     final_mse_ode = float(np.mean(mse_pure_ode))
     final_mse_gru = float(np.mean(mse_gru))
+    final_mse_res = float(np.mean(mse_residual))
 
     print(f"\n{'='*60}")
     print("  REPORTE FR-7 — Evaluacion en lazo abierto (test set)")
     print(f"{'='*60}")
-    print(f"  MSE ODE pura   : {final_mse_ode:.8f}")
-    print(f"  MSE ODE + GRU  : {final_mse_gru:.8f}")
-    print(f"  Mejora relativa: {100*(final_mse_ode - final_mse_gru)/final_mse_ode:.2f}%")
+    print(f"  MSE ODE pura          : {final_mse_ode:.8f}")
+    print(f"  MSE ODE + red residual: {final_mse_res:.8f}  "
+          f"({100*(final_mse_ode - final_mse_res)/final_mse_ode:+.2f}%)")
+    print(f"  MSE ODE + GRU         : {final_mse_gru:.8f}  "
+          f"({100*(final_mse_ode - final_mse_gru)/final_mse_ode:+.2f}%)")
     print(f"{'='*60}\n")
 
     assert final_mse_gru <= final_mse_ode, (
-        f"El estimador no supera la ODE pura: "
+        f"El estimador GRU no supera la ODE pura: "
         f"MSE GRU={final_mse_gru:.8f} > MSE ODE={final_mse_ode:.8f}"
     )
 
