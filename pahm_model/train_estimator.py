@@ -222,22 +222,27 @@ class PAHMTrainer:
                 # θ observado real en t+1
                 theta_next_obs = angle_padded[:, t + 1, :]    # (batch, 1)
 
-                # Historial de torques para regularización (sin gradiente)
-                tau_w_history = torch.zeros(
-                    (batch_size, self.seq_len), device=self.device
-                )
+                # Historial de torques para regularización.
+                # Pasos anteriores: sin gradiente (TBPTT — no acumular grafo).
+                # Paso actual: CON gradiente para que λ1 y λ2 influyan en el
+                # optimizador a través de parsimonia y suavidad temporal.
+                history_steps: list[torch.Tensor] = []
                 with torch.no_grad():
                     for w_idx in range(self.seq_len - 1):
                         end = t - (self.seq_len - 1 - w_idx)
                         if end - self.seq_len < 0:
+                            history_steps.append(
+                                torch.zeros(batch_size, device=self.device)
+                            )
                             continue
                         w_slice = self._build_gru_window(
                             pwm_padded, angle_padded, end
                         )
-                        tau_w_history[:, w_idx] = (
+                        history_steps.append(
                             self.estimator(w_slice).squeeze(-1).detach()
                         )
-                tau_w_history[:, -1] = tau_w_current.squeeze(-1).detach()
+                history_steps.append(tau_w_current.squeeze(-1))
+                tau_w_history = torch.stack(history_steps, dim=1)  # (batch, seq_len)
 
                 loss, l_rec, l_pars, l_smooth = self.criterion(
                     theta_next_obs, theta_next_sim, tau_w_history
