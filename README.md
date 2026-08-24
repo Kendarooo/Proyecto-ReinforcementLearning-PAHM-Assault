@@ -6,6 +6,26 @@
 
 Este repositorio contiene la línea base de software e infraestructura de simulación para el **Proyecto 2**. El objetivo del proyecto es modelar las perturbaciones de viento latentes no observadas mediante celdas recurrentes (aprendizaje de secuencias) y diseñar una política de control robusta utilizando **Aprendizaje por Refuerzo (RL)** sobre un entorno Gymnasium acoplado a un modelo físico híbrido (Caja Gris).
 
+## Presentación del proyecto
+
+El proyecto integra **modelado físico híbrido, estimación recurrente de perturbaciones, representación no supervisada y control robusto mediante aprendizaje por refuerzo**. Además, incluye una Etapa 0 individual con un agente **DQN entrenado sobre Atari Assault**, utilizada como ejercicio introductorio de RL antes de abordar el sistema PAHM.
+
+La arquitectura conecta una estimación latente del torque de viento con un modelo no supervisado de perturbaciones y, posteriormente, con políticas RL entrenadas para mantener el seguimiento de referencia bajo condiciones de viento no vistas durante la evaluación.
+
+### Resultados destacados
+
+En la evaluación final de Etapa 3, el controlador **robusto** superó al controlador **naive** en las cinco métricas globales registradas:
+
+| Métrica | Naive | Robust | Mejora del controlador robusto |
+| --- | ---: | ---: | ---: |
+| MAE de seguimiento | 0.0210443 | 0.0120313 | **42.83% menor** |
+| MSE de seguimiento | 0.00469722 | 0.00233672 | **50.25% menor** |
+| Tiempo de estabilización | 1.344 | 0.688 | **48.81% menor** |
+| Sobreimpulso máximo | 0.397407 | 0.190058 | **52.18% menor** |
+| Retorno acumulado | -29.8621 | -14.5259 | **51.36% mejor** |
+
+Los resultados completos por episodio y por tipo de perturbación se encuentran en `artifacts/stage3/evaluation/`.
+
 ---
 
 ## 1. Estructura del Repositorio
@@ -74,7 +94,6 @@ El código está organizado siguiendo principios de diseño limpio, separación 
 │   ├── tau_w_dataset.py
 │   └── train_unsupervised.py
 │
-├── etapa-0-DemonAttack/            # Etapa 0 individual — DQN sobre Atari DemonAttack
 ├── etapa0-assault-kendall/         # Etapa 0 individual — DQN sobre Atari Assault
 │
 ├── test/                           # Pruebas unitarias — Etapa 1 (TDD, NFR-6)
@@ -280,7 +299,9 @@ Al desarrollar extensiones sobre este código base, se deben respetar las siguie
 3. **Robustez mediante Domain Randomization:** Para mitigar el sobreajuste (*overfitting*) a la trayectoria inicial desde el reposo, el método `reset` acepta el argumento `options={"randomize": True}`. Esto inicializa el episodio en un punto cinemático aleatorio pero seguro.
 4. **Cinemática del Viento y Estelas:** La actualización visual de las partículas de viento calcula su origen y destino basándose en el vector de desplazamiento real por cuadro ($dx, dy$), aplicando un factor de amplificación visual estático para que el flujo sea perfectamente visible incluso ante brisas de baja magnitud.
 5. **Fuente de Viento Configurable:** El entorno construye la perturbación automática desde `gym_wrapper/config.json` (`wind.enabled`, `wind.source`, `wind.default_pattern`, `wind.max_torque`). La lógica queda detrás de `WindSource`; `wind.source="wind_process"` usa los patrones procedurales y `wind.source="stage2_sampler"` carga `artifacts/stage2/gmm_wind_model.pkl` mediante `WindSampler` para alimentar Etapa 3 con la representación no supervisada de Etapa 2.
-6. **Referencia y Recompensa Configurables:** `theta_ref` se inicializa desde `control.theta_ref`, puede sobrescribirse por constructor o `reset(options={"theta_ref": ...})`, y la recompensa usa los pesos de `reward.tracking_error_weight`, `reward.integral_weight`, `reward.velocity_weight` y `reward.control_weight`.
+6. **Referencia y Recompensa Configurables:** `theta_ref` se inicializa desde `control.theta_ref`, puede sobrescribirse por constructor o `reset(options={"theta_ref": ...})`, y la recompensa usa los pesos de `reward.tracking_error_weight`, `reward.integral_weight`, `reward.velocity_weight`, `reward.control_weight` y `reward.action_delta_weight`.
+7. **Robustez y Acciones Suaves:** El entorno mantiene `prev_action` por episodio y penaliza cambios consecutivos mediante `reward.action_delta_weight * (u_t-u_{t-1})^2`. `reset()` reinicia `prev_action=0.0` para evitar fuga entre episodios.
+8. **Entrenamiento RL desde Estados Iniciales Diversos:** `rl_training.randomize_reset=true` hace que entrenamiento use `reset(options={"randomize": True})`; `evaluation.randomize_reset` se controla de forma independiente para evaluación.
 
 ---
 
